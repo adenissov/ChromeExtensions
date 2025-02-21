@@ -1,0 +1,2 @@
+Chrome Extensions Folder
+C:\Users\adeniss\AppData\Local\Google\Chrome\User Data\Default\Extensions
