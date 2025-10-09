@@ -19,29 +19,31 @@ changeColor.addEventListener("click", async () => {
 function reformatEmbeddedJson() {
 
 	const indentIncrement = 4;
-	const jsonKeyColor = "orange";
-	const jsonValueColor = "black";
+	const jsonKeyColor = "grey";
+	const jsonValueDefaultColor = "black";
 	const jsonValueValidColor = "green";
 	const jsonValueInvalidColor = "red";
 
 	var indentStack = [];
 
-	var jsonRootElement = undefined;
-	var indentSpaces = "";
-	var numOfObjMembers = 0;
+	var validationErrMessages = [];
+	var jsonRootHtmlElement = undefined;
+	var indent = "";
 
 	function insertJsonObjectIntoText(key, value, parentElement) {
-		console.log('Add key: ' + key + ' value: ' + value);
+		//DEBUG: console.log('Add key: ' + key + ' value: ' + value);
 		if (typeof value == "object" && Object.keys(value).length > 0) {  // if this is if beginning of an object or of an array
 			if(Array.isArray(value)) {  // if key is number - means beginng of an array
 				var objectName = (key == "" ? "" : '\"' + key + '\"');
-				parentElement.textContent += indentSpaces + objectName + (objectName==''? '' : ": ");
-				numOfObjMembers = Object.keys(value).length;
+				parentElement.innerHTML += indent;
+				parentElement.appendChild(span(objectName, jsonKeyColor, false));
+				parentElement.innerHTML += (objectName==''? '' : ": ");
+				var numOfJsonObjMembers = Object.keys(value).length;
 
-				parentElement.textContent += "[\n";
-				indentStack.push( {"objectType" : "array", "countOfObjMembers" : numOfObjMembers} );
-				var indent = indentStack.length;
-				indentSpaces = " ".repeat(indent * indentIncrement);
+				parentElement.innerHTML += "[\n";
+				indentStack.push( {"objectType" : "array", "countOfObjMembers" : numOfJsonObjMembers} );
+				var indentLen = indentStack.length;
+				indent = " ".repeat(indentLen * indentIncrement);
 				// console.log("indentLevel: " + indentLevel);
 				// console.log("indent: " + "|" + indent+ "|");
 			}
@@ -52,22 +54,24 @@ function reformatEmbeddedJson() {
 				if (key != "" && isNaN(parseInt(key))) { // if the object name is not empty and not a number, i e a real name
 					objectName = '\"' + key + '\"'; // enclose it in double quotes
 				};
-				parentElement.textContent += indentSpaces + objectName + (objectName==''? '' : ": ");
-				numOfObjMembers = Object.keys(value).length;
+				parentElement.innerHTML += indent;
+				parentElement.appendChild(span(objectName, jsonKeyColor, false));
+				parentElement.innerHTML += (objectName==''? '' : ": ");
+				var numOfJsonObjMembers = Object.keys(value).length;
 
-				parentElement.textContent += "{\n";
-				indentStack.push( {"objectType" : "object", "countOfObjMembers" : numOfObjMembers} );
-				var indent = indentStack.length;
-				indentSpaces = " ".repeat(indent * indentIncrement);
+				parentElement.innerHTML += "{\n";
+				indentStack.push( {"objectType" : "object", "countOfObjMembers" : numOfJsonObjMembers} );
+				var indentLen = indentStack.length;
+				indent = " ".repeat(indentLen * indentIncrement);
 			}
 		}
-		else { // an atomic element or an object with 0 fields
-			parentElement.textContent += indentSpaces;
+		else { // an atomic element OR an object with 0 fields
+			parentElement.innerHTML += indent;
 			var tmpValue = value;
 
 			var idx = indentStack.length - 1;
-			var isLastItemInBlock = indentStack[idx].countOfObjMembers == 1; // if this is the last item in block, no comma after it
-			appendFormattedJsonItem(key, tmpValue, parentElement, isLastItemInBlock);
+			var isLastItemOfObject = indentStack[idx].countOfObjMembers == 1; // if this is the last item of object - place no comma after it
+			appendFormattedJsonItem(key, tmpValue, parentElement, isLastItemOfObject);
 
 			// if this was the last element in block, put the closing bracket
 			while(indentStack.length > 0) {
@@ -78,84 +82,76 @@ function reformatEmbeddedJson() {
 
 				// if it was the last element in block - put closing bracket
 				var indentTmp = " ".repeat((idx) * indentIncrement);
-				isLastItemInBlock = (idx == 0 || indentStack[idx-1].countOfObjMembers == 1);
-				parentElement.textContent += indentTmp +
+				isLastItemOfObject = (idx == 0 || indentStack[idx-1].countOfObjMembers == 1);
+				parentElement.innerHTML += indentTmp +
 					(indentStack[idx].objectType == "object" ? "}" : "]") +
-					(isLastItemInBlock ? "" : ",")  + "\n";
+					(isLastItemOfObject ? "" : ",")  + "\n";
 				indentStack.pop();
 			}
-			var indent = indentStack.length;
-			indentSpaces = " ".repeat(indent * indentIncrement);
+			var indentLen = indentStack.length;
+			indent = " ".repeat(indentLen * indentIncrement);
 		}
 	}
 
 	function appendFormattedJsonItem(key, value, parentElement, isLastItemInBlock) {
-		var keyElement = document.createElement("span");
-		keyElement.style.color = jsonKeyColor;
-		keyElement.textContent = '\"' + key + '\": ';
-		parentElement.appendChild (keyElement);
+		var jsonKeyElement = document.createElement("span");
+		parentElement.innerHTML += '\"';
+		parentElement.appendChild(span(key, jsonKeyColor, false));
+		parentElement.innerHTML += '\": ';
 
-		var valueElement = document.createElement("span");
-		var tmpValue = value;
-		if(typeof value == "object") {
-			tmpValue = Array.isArray(value) ? "[]" : "{}" ;
+		var jsonValueElement = document.createElement("span");
+		var valueText = undefined;
+
+		var color = jsonValueDefaultColor;
+		var bold = false;
+		var isValueValid = validateField(key, value);
+		if(isValueValid != undefined) {
+			switch (isValueValid) {
+				case true:  color = jsonValueValidColor; break;
+				case false: color = jsonValueInvalidColor; bold = true; break;
+			}
 		}
-		else if (typeof value == 'number') {
-			tmpValue = value;
-		}
-		else {
-			tmpValue = '\"' + value + '\"';
+
+		switch (typeof value)
+		{
+			case "number": 
+				parentElement.appendChild(span(value, color, bold));
+				break;
+			case "object":
+				valueText = Array.isArray(value) ? "[]" : "{}" ;
+				parentElement.appendChild(span(valueText, color, bold));
+				break;
+			default:
+				parentElement.innerHTML += '\"';
+				parentElement.appendChild(span(value, color, bold));
+				parentElement.innerHTML += '\"';
 		};
 
-		var valueIsValidated = validateField(key, value);
-		var color = jsonValueColor;
-		if (valueIsValidated != undefined) {
-			if(valueIsValidated) {
-				color = jsonValueValidColor;
-			}
-			else {
-				color = jsonValueInvalidColor;
-				tmpValue += '  // *** INVALID';
-			}
-		}
-		valueElement.style.color = color;
-		if (valueIsValidated != undefined) {
-			valueElement.style.fontWeight = "bold";
-		}
+		parentElement.innerHTML += (isLastItemInBlock ? '' : ',') + '\n';
 
-		valueElement.textContent = tmpValue;
-		parentElement.appendChild (valueElement);
-		parentElement.textContent += (isLastItemInBlock ? '' : ',') + '\n';
+		if (isValueValid != undefined && !isValueValid) {
+			var validationErrMsg = ('\"' + key + '\": ') + ('\"' + value + '\", ') + "  // *** INVALID";
+			validationErrMessages.push(validationErrMsg);
+		}
 	}
 
-
-	function formatJsonItem(item, color, isValidated) {
-		var element = document.createElement("span");
-		element.style.color = color;
-		if(isValidated) {
-			element.style.fontWeight = "bold";
+	function span(text, color, bold) {
+		var spanElem = document.createElement("span");
+		spanElem.innerHTML = text;
+		spanElem.style.color = color;
+		if(bold) {
+			spanElem.style.fontWeight = "bold"
 		}
-		element.textContent = item;
-		return element;
-	}
-
-	function formatJsonKey(key) {
-		var formatted = formatJsonItem(key, jsonKeyColor, false);
-	}
-
-	function formatJsonValue(value, isValidated=undefined) {
-		var color = isValidated
-		var formatted = formatJsonItem(key, jsonKeyColor, false);
+		return spanElem;
 	}
 
 	function jsonStringifyReplacer(key, value) {
-		console.log("200");
-		insertJsonObjectIntoText(key, value, jsonRootElement);
+		insertJsonObjectIntoText(key, value, jsonRootHtmlElement);
 		return value;
 	}
 
 	function validateField(key, value) {
-		console.log("Key: " + key + " Value: " + value);
+		//DEBUG: console.log("Key: " + key + " Value: " + value);
 
 		var regexPeopleName = new RegExp("^[a-zA-Z0-9_]+(([',. \\-][a-zA-Z0-9\\-\\(\\)\\*_ ])?[a-zA-Z0-9.\\-\\(\\)\\* _]*)*$");
 		var regexDefault  = new RegExp("^[^\\{\\}\\[\\]\\|\\`\\~]*$");
@@ -172,22 +168,25 @@ function reformatEmbeddedJson() {
 		var boolResult = undefined;
 		switch (key) {
 			case "response":
+			case "problemTypeDescription":
 			case "additionalInformation":
-							boolResult = regexDefault.test(value);  break;
-
+							boolResult = regexDefault.test(value);     break;
 			case "firstName":
-			case "lastName": boolResult = regexDefault.test(value);  break;
-
+			case "lastName": boolResult = regexPeopleName.test(value); break;
+			case "country":
+		    case "province":
+			case "city":
+			case "streetNumberAndSuffix":
+				            boolResult = regexPlaceName.test(value);   break;
 			case "primaryContactNumber": 
-			case "secondaryContactNumber": 
-							boolResult = regexPhone.test(value);  break;
-
-			case "email":	boolResult = regexEmail.test(value);    break;
-
-			case "scheduledStartDate":
-			case "scheduledResolutionDate":
-			case "transactionDate":
-							boolResult = regexDates.test(value);  break;
+			case "secondaryContactNumber":
+			case "fax":
+							boolResult = regexPhone.test(value);       break;
+			case "email":	boolResult = regexEmail.test(value);       break;
+			// case "scheduledStartDate":
+			// case "scheduledResolutionDate":
+			// case "transactionDate":
+			// 				boolResult = regexDates.test(value);    break;
 		};
 		if(typeof value == "object") {
 			console.log(" Number of object properties: " + Object.keys(value).length);
@@ -245,28 +244,42 @@ function reformatEmbeddedJson() {
 
 		var json_container_in_header = json_containers[0];
 		var json_container_in_body = json_containers[1];
-		console.log(json_container_in_header.textContent);
+		//DEBUG: console.log(json_container_in_header.textContent);
 
 		// Temporary element created from the embedded JSON text
 		var json_tmp_obj = undefined;
-		// PRE HTML element to be created to enclose the JSON text in Header and in Body to preserve indents and line breaks
-		var new_pre_element = undefined;
 		
 		// Make the pretty JSON text from HTTP request Header
 		json_tmp_obj = JSON.parse(json_container_in_header.textContent);
-		new_pre_element = document.createElement("pre");
-		new_pre_element.textContent = JSON.stringify(json_tmp_obj, undefined, indentIncrement); // enclose JSON text by PRE HTML element
+		var requestHeaderJsonElem = document.createElement("pre");
+		requestHeaderJsonElem.textContent = JSON.stringify(json_tmp_obj, undefined, indentIncrement); // enclose JSON text by PRE HTML element
 		json_container_in_header.textContent = ""; 	// remove the previous not formatted JSON text
-		json_container_in_header.appendChild(new_pre_element);  // insert new PRE element containing formatted JSON
+		json_container_in_header.appendChild(requestHeaderJsonElem);  // insert new PRE element containing formatted JSON
 
 		// Make the pretty JSON text from HTTP request Body
 		json_tmp_obj = JSON.parse(json_container_in_body.textContent);
-		new_pre_element = document.createElement("pre");
-		jsonRootElement = new_pre_element;
-		//new_pre_element.textContent = 
+		jsonRootHtmlElement = document.createElement("pre");
 		JSON.stringify(json_tmp_obj, jsonStringifyReplacer, indentIncrement); // enclose JSON text by PRE HTML element
 
 		json_container_in_body.textContent = ""; 	// remove the previous not formatted JSON text
-		json_container_in_body.appendChild(new_pre_element);  // insert new PRE element containing formatted JSON
+
+		// Add validation error messages (if any) before the JSON body
+		if(validationErrMessages.length > 0) {
+			var validationErrPreElement = document.createElement("pre");
+			var validationErrElement = document.createElement("span");
+			var validationErrText = "Validation errors:\n";
+			for (let i=0; i<validationErrMessages.length; i++) {
+				validationErrText += validationErrMessages[i] + "\n";
+			}
+
+			validationErrElement.style.color = "red";
+			validationErrElement.style.fontWeight = "bold";
+			validationErrElement.innerHTML = validationErrText;
+			validationErrPreElement.appendChild(validationErrElement);
+
+			json_container_in_body.appendChild(validationErrPreElement);
+		}
+
+		json_container_in_body.appendChild(jsonRootHtmlElement);  // insert new PRE element containing formatted JSON
 	}	 
 }
