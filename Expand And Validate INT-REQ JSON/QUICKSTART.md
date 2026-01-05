@@ -78,6 +78,44 @@ Your rule would be:
 }
 ```
 
+## Real Examples Already Implemented
+
+The extension already includes working examples of conditional validation:
+
+### Example 1: Toronto Water firstName Length
+```javascript
+{
+    type: 'conditional',
+    condition: (obj) => obj.division === 'Toronto Water',
+    validate: (obj) => {
+        if (!obj.participants || !Array.isArray(obj.participants)) return true;
+        return obj.participants.every(p => !p.firstName || p.firstName.length <= 30);
+    },
+    fields: ['firstName'],
+    message: 'First name for Toronto Water is longer than 30 characters'
+}
+```
+
+### Example 2: Toronto Water lastName Length
+```javascript
+{
+    type: 'conditional',
+    condition: (obj) => obj.division === 'Toronto Water',
+    validate: (obj) => {
+        if (!obj.participants || !Array.isArray(obj.participants)) return true;
+        return obj.participants.every(p => !p.lastName || p.lastName.length <= 50);
+    },
+    fields: ['lastName'],
+    message: 'Last name for Toronto Water is longer than 50 characters'
+}
+```
+
+These rules demonstrate:
+- Checking a top-level field (`division`)
+- Validating fields inside an array (`participants`)
+- Using `.every()` to validate all array elements
+- Safe null checking with optional chaining
+
 ### Step 5: Save and Reload
 
 1. **Save** `popup.js`

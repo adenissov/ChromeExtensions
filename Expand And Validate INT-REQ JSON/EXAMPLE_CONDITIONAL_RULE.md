@@ -1,5 +1,50 @@
 # Example: Adding a Conditional Validation Rule
 
+## Currently Implemented Rules
+
+The extension already includes these conditional validation rules as working examples:
+
+### Rule 1: Toronto Water - First Name Length
+**Business Rule**: For Toronto Water division, participant first names must not exceed 30 characters.
+
+```javascript
+{
+    type: 'conditional',
+    condition: (obj) => obj.division === 'Toronto Water',
+    validate: (obj) => {
+        if (!obj.participants || !Array.isArray(obj.participants)) return true;
+        return obj.participants.every(p => !p.firstName || p.firstName.length <= 30);
+    },
+    fields: ['firstName'],
+    message: 'First name for Toronto Water is longer than 30 characters'
+}
+```
+
+### Rule 2: Toronto Water - Last Name Length
+**Business Rule**: For Toronto Water division, participant last names must not exceed 50 characters.
+
+```javascript
+{
+    type: 'conditional',
+    condition: (obj) => obj.division === 'Toronto Water',
+    validate: (obj) => {
+        if (!obj.participants || !Array.isArray(obj.participants)) return true;
+        return obj.participants.every(p => !p.lastName || p.lastName.length <= 50);
+    },
+    fields: ['lastName'],
+    message: 'Last name for Toronto Water is longer than 50 characters'
+}
+```
+
+These examples demonstrate:
+- ✅ Checking a condition on a top-level field (`division`)
+- ✅ Validating fields within an array (`participants`)
+- ✅ Using `.every()` to validate all array elements
+- ✅ Safe null/undefined checking
+- ✅ String length validation
+
+---
+
 ## Scenario
 You need to add a validation rule that checks:
 - **IF** `fieldA` equals `"SpecialCase"`

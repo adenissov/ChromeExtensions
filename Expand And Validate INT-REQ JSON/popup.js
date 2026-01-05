@@ -64,6 +64,26 @@ function reformatEmbeddedJson() {
 			fields: ['email'],
 			pattern: /^[\w\.-]+@([\w-]+\.)+[\w-]{2,4}$/,
 			message: 'Invalid email format'
+		},
+		{
+			type: 'conditional',
+			condition: (obj) => obj.division === 'Toronto Water',
+			validate: (obj) => {
+				if (!obj.participants || !Array.isArray(obj.participants)) return true;
+				return obj.participants.every(p => !p.firstName || p.firstName.length <= 30);
+			},
+			fields: ['firstName'],
+			message: 'First name for Toronto Water is longer than 30 characters'
+		},
+		{
+			type: 'conditional',
+			condition: (obj) => obj.division === 'Toronto Water',
+			validate: (obj) => {
+				if (!obj.participants || !Array.isArray(obj.participants)) return true;
+				return obj.participants.every(p => !p.lastName || p.lastName.length <= 50);
+			},
+			fields: ['lastName'],
+			message: 'Last name for Toronto Water is longer than 50 characters'
 		}
 	];
 

@@ -78,6 +78,15 @@ All existing validation rules were successfully migrated from switch-case to rul
 4. **Phone fields** (`primaryContactNumber`, `secondaryContactNumber`, `fax`)
 5. **Email field** (`email`)
 
+## Cross-Field Validation Rules Added
+
+New conditional validation rules demonstrate the cross-field validation capability:
+
+1. **Toronto Water firstName length**: When `division` is "Toronto Water", validates that `firstName` in participants is ≤ 30 characters
+   - Error: "First name for Toronto Water is longer than 30 characters"
+2. **Toronto Water lastName length**: When `division` is "Toronto Water", validates that `lastName` in participants is ≤ 50 characters
+   - Error: "Last name for Toronto Water is longer than 50 characters"
+
 ## How to Add New Validation Rules
 
 ### Simple Regex Validation
