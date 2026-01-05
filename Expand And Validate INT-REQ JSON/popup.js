@@ -29,9 +29,197 @@ function reformatEmbeddedJson() {
 	var validationErrMessages = [];
 	var jsonRootHtmlElement = undefined;
 	var indent = "";
+	
+	// Validation infrastructure
+	var validationResultsMap = new Map();
+	
+	// Validation rules configuration
+	const validationRules = [
+		{
+			type: 'regex',
+			fields: ['response', 'problemTypeDescription', 'additionalInformation'],
+			pattern: /^[^\{\}\[\]\|\`\~]*$/,
+			message: 'Contains invalid characters'
+		},
+		{
+			type: 'regex',
+			fields: ['firstName', 'lastName'],
+			pattern: /^[a-zA-Z0-9_]+(([',. \-][a-zA-Z0-9\-\(\)\*_ ])?[a-zA-Z0-9.\-\(\)\* _]*)*$/,
+			message: 'Invalid name format'
+		},
+		{
+			type: 'regex',
+			fields: ['country', 'province', 'city', 'streetNumberAndSuffix'],
+			pattern: /^[A-Za-z0-9'&.,:;_/\(\)\* #\-]*$/,
+			message: 'Invalid location format'
+		},
+		{
+			type: 'regex',
+			fields: ['primaryContactNumber', 'secondaryContactNumber', 'fax'],
+			pattern: /^(\+[0-9 ]*)?[(]{0,1}[0-9]{1,4}[)]{0,1}[-\s\.\/0-9 ]*$/,
+			message: 'Invalid phone number format'
+		},
+		{
+			type: 'regex',
+			fields: ['email'],
+			pattern: /^[\w\.-]+@([\w-]+\.)+[\w-]{2,4}$/,
+			message: 'Invalid email format'
+		}
+	];
 
-	function insertJsonObjectIntoText(key, value, parentElement) {
+	/**
+	 * Performs validation on the entire JSON object before rendering.
+	 * Executes all validation rules and stores results for lookup during rendering.
+	 * @param {Object} jsonObject - The parsed JSON object to validate
+	 * @returns {Map} validationResultsMap - Map of field paths to validation results
+	 */
+	function performValidation(jsonObject) {
+		validationResultsMap.clear();
+		
+		// Run all validation rules
+		validationRules.forEach(rule => {
+			executeValidationRule(rule, jsonObject);
+		});
+		
+		return validationResultsMap;
+	}
+
+	/**
+	 * Execute a single validation rule against the JSON object
+	 */
+	function executeValidationRule(rule, jsonObject) {
+		switch (rule.type) {
+			case 'regex':
+				executeRegexRule(rule, jsonObject);
+				break;
+			case 'conditional':
+				executeConditionalRule(rule, jsonObject);
+				break;
+			case 'custom':
+				executeCustomRule(rule, jsonObject);
+				break;
+		}
+	}
+
+	/**
+	 * Execute a regex validation rule
+	 */
+	function executeRegexRule(rule, jsonObject) {
+		rule.fields.forEach(fieldName => {
+			traverseAndValidate(jsonObject, fieldName, (value, path) => {
+				// Only validate non-empty string values
+				if (typeof value !== 'string' || value === '') {
+					return;
+				}
+				var isValid = rule.pattern.test(value);
+				console.log('Validating field:', fieldName, 'at path:', path, 'value:', value, 'isValid:', isValid);
+				validationResultsMap.set(path, {
+					isValid: isValid,
+					message: isValid ? undefined : rule.message,
+					fieldName: fieldName,
+					value: value
+				});
+			});
+		});
+	}
+
+	/**
+	 * Execute a conditional validation rule (for cross-field validation)
+	 */
+	function executeConditionalRule(rule, jsonObject) {
+		// Check if condition is met
+		if (!rule.condition(jsonObject)) {
+			return; // Condition not met, skip validation
+		}
+		
+		// Condition met, validate the dependent fields
+		var isValid = rule.validate(jsonObject);
+		
+		// Store results for all affected fields
+		rule.fields.forEach(fieldName => {
+			traverseAndValidate(jsonObject, fieldName, (value, path) => {
+				validationResultsMap.set(path, {
+					isValid: isValid,
+					message: isValid ? undefined : rule.message,
+					fieldName: fieldName,
+					value: value
+				});
+			});
+		});
+	}
+
+	/**
+	 * Execute a custom validation rule
+	 */
+	function executeCustomRule(rule, jsonObject) {
+		var result = rule.validate(jsonObject);
+		
+		if (rule.affectedFields) {
+			rule.affectedFields.forEach(fieldName => {
+				traverseAndValidate(jsonObject, fieldName, (value, path) => {
+					validationResultsMap.set(path, {
+						isValid: result,
+						message: result ? undefined : rule.message,
+						fieldName: fieldName,
+						value: value
+					});
+				});
+			});
+		}
+	}
+
+	/**
+	 * Traverse JSON object to find fields matching fieldName and apply validation
+	 */
+	function traverseAndValidate(obj, fieldName, validationCallback, currentPath = '') {
+		if (typeof obj !== 'object' || obj === null) {
+			return;
+		}
+
+		if (Array.isArray(obj)) {
+			obj.forEach((item, index) => {
+				var newPath = currentPath ? currentPath + '.' + index : index.toString();
+				traverseAndValidate(item, fieldName, validationCallback, newPath);
+			});
+		} else {
+			for (var key in obj) {
+				if (obj.hasOwnProperty(key)) {
+					var value = obj[key];
+					var newPath = currentPath ? currentPath + '.' + key : key;
+					
+					if (key === fieldName) {
+						// Found matching field, validate it
+						if (typeof value !== 'object' || value === null) {
+							validationCallback(value, newPath);
+						}
+					}
+					
+					// Recursively traverse nested objects
+					if (typeof value === 'object' && value !== null) {
+						traverseAndValidate(value, fieldName, validationCallback, newPath);
+					}
+				}
+			}
+		}
+	}
+
+	function insertJsonObjectIntoText(key, value, parentElement, fieldPath = "") {
 		//DEBUG: console.log('Add key: ' + key + ' value: ' + value);
+		
+		// Build the current field path
+		var currentPath = fieldPath;
+		if (key !== "") {
+			if (fieldPath === "") {
+				currentPath = key;
+			} else if (!isNaN(parseInt(key))) {
+				// Array index
+				currentPath = fieldPath + "." + key;
+			} else {
+				// Object property
+				currentPath = fieldPath + "." + key;
+			}
+		}
+		
 		if (typeof value == "object" && Object.keys(value).length > 0) {  // if this is if beginning of an object or of an array
 			if(Array.isArray(value)) {  // if key is number - means beginng of an array
 				var objectName = (key == "" ? "" : '\"' + key + '\"');
@@ -64,6 +252,13 @@ function reformatEmbeddedJson() {
 				var indentLen = indentStack.length;
 				indent = " ".repeat(indentLen * indentIncrement);
 			}
+			
+			// Recursively process array or object members
+			for (var subKey in value) {
+				if (value.hasOwnProperty(subKey)) {
+					insertJsonObjectIntoText(subKey, value[subKey], parentElement, currentPath);
+				}
+			}
 		}
 		else { // an atomic element OR an object with 0 fields
 			parentElement.innerHTML += indent;
@@ -71,7 +266,7 @@ function reformatEmbeddedJson() {
 
 			var idx = indentStack.length - 1;
 			var isLastItemOfObject = indentStack[idx].countOfObjMembers == 1; // if this is the last item of object - place no comma after it
-			appendFormattedJsonItem(key, tmpValue, parentElement, isLastItemOfObject);
+			appendFormattedJsonItem(key, tmpValue, parentElement, isLastItemOfObject, currentPath);
 
 			// if this was the last element in block, put the closing bracket
 			while(indentStack.length > 0) {
@@ -93,7 +288,7 @@ function reformatEmbeddedJson() {
 		}
 	}
 
-	function appendFormattedJsonItem(key, value, parentElement, isLastItemInBlock) {
+	function appendFormattedJsonItem(key, value, parentElement, isLastItemInBlock, fieldPath) {
 		var jsonKeyElement = document.createElement("span");
 		parentElement.innerHTML += '\"';
 		parentElement.appendChild(span(key, jsonKeyColor, false));
@@ -104,7 +299,12 @@ function reformatEmbeddedJson() {
 
 		var color = jsonValueDefaultColor;
 		var bold = false;
-		var isValueValid = validateField(key, value);
+		
+		// Lookup validation result from map instead of validating inline
+		var validationResult = validationResultsMap.get(fieldPath);
+		console.log('Rendering field:', key, 'at path:', fieldPath, 'hasResult:', !!validationResult, 'isValid:', validationResult ? validationResult.isValid : 'N/A');
+		var isValueValid = validationResult ? validationResult.isValid : undefined;
+		
 		if(isValueValid != undefined) {
 			switch (isValueValid) {
 				case true:  color = jsonValueValidColor; break;
@@ -130,7 +330,10 @@ function reformatEmbeddedJson() {
 		parentElement.innerHTML += (isLastItemInBlock ? '' : ',') + '\n';
 
 		if (isValueValid != undefined && !isValueValid) {
-			var validationErrMsg = ('\"' + key + '\": ') + ('\"' + value + '\", ') + "  // *** INVALID";
+			var validationErrMsg = ('\"' + key + '\": ') + ('\"' + value + '\"');
+			if (validationResult && validationResult.message) {
+				validationErrMsg += ",  // " + validationResult.message;
+			}
 			validationErrMessages.push(validationErrMsg);
 		}
 	}
@@ -146,56 +349,9 @@ function reformatEmbeddedJson() {
 	}
 
 	function jsonStringifyReplacer(key, value) {
-		insertJsonObjectIntoText(key, value, jsonRootHtmlElement);
+		insertJsonObjectIntoText(key, value, jsonRootHtmlElement, "");
 		return value;
 	}
-
-	function validateField(key, value) {
-		//DEBUG: console.log("Key: " + key + " Value: " + value);
-
-		var regexPeopleName = new RegExp("^[a-zA-Z0-9_]+(([',. \\-][a-zA-Z0-9\\-\\(\\)\\*_ ])?[a-zA-Z0-9.\\-\\(\\)\\* _]*)*$");
-		var regexDefault  = new RegExp("^[^\\{\\}\\[\\]\\|\\`\\~]*$");
-		var regexOrgName = new RegExp("^[A-Za-z0-9'&\\(\\),\\* \\-]*$");
-		var regexPlaceName = new RegExp("^[A-Za-z0-9'&.,:;_/\\(\\)\\* #\\-]*$");
-		var regexNumbers = new RegExp("^[0-9]*$");
-		var regexStatus = new RegExp("^[A-Za-z0-9&\\-\\._ ]*$");
-		var regexKey = new RegExp("^[A-Za-z0-9&\\-\\._]+$");
-		var regexId = new RegExp("^[A-Za-z0-9&\\-\\._]*$");
-		var regexEmail = new RegExp("^[\\w\\.-]+@([\\w-]+\\.)+[\\w-]{2,4}$");
-		var regexPhone = new RegExp("^(\\+[0-9 ]*)?[(]{0,1}[0-9]{1,4}[)]{0,1}[-\\s\\.\/0-9 ]*$");
-		var regexDates = new RegExp("^\\d{4}-[0-1]\\d-[0-3]\\dT[0-2]\\d:[0-5]\\d:[0-5]\\d\\.\\d{3}(Z|((\\-|\\+))0(0|4|5)00)$");
-
-		var boolResult = undefined;
-		switch (key) {
-			case "response":
-			case "problemTypeDescription":
-			case "additionalInformation":
-							boolResult = regexDefault.test(value);     break;
-			case "firstName":
-			case "lastName": boolResult = regexPeopleName.test(value); break;
-			case "country":
-		    case "province":
-			case "city":
-			case "streetNumberAndSuffix":
-				            boolResult = regexPlaceName.test(value);   break;
-			case "primaryContactNumber": 
-			case "secondaryContactNumber":
-			case "fax":
-							boolResult = regexPhone.test(value);       break;
-			case "email":	boolResult = regexEmail.test(value);       break;
-			// case "scheduledStartDate":
-			// case "scheduledResolutionDate":
-			// case "transactionDate":
-			// 				boolResult = regexDates.test(value);    break;
-		};
-		if(typeof value == "object") {
-			console.log(" Number of object properties: " + Object.keys(value).length);
-		}
-		if(boolResult != undefined) {
-			console.log('---- regex.test: ' + boolResult);
-		}
-		return boolResult;
-	}	
 	 
 	var subTabs = document.getElementsByClassName("tabContent");
 	//DEBUG: console.log('subTabs.length: ' + subTabs.length);
@@ -258,8 +414,14 @@ function reformatEmbeddedJson() {
 
 		// Make the pretty JSON text from HTTP request Body
 		json_tmp_obj = JSON.parse(json_container_in_body.textContent);
+		
+		// PHASE 4: Perform validation pass before rendering
+		validationResultsMap = performValidation(json_tmp_obj);
+		validationErrMessages = []; // Reset error messages
+		
 		jsonRootHtmlElement = document.createElement("pre");
-		JSON.stringify(json_tmp_obj, jsonStringifyReplacer, indentIncrement); // enclose JSON text by PRE HTML element
+		// Manually traverse and format JSON instead of using JSON.stringify with replacer
+		insertJsonObjectIntoText("", json_tmp_obj, jsonRootHtmlElement, "");
 
 		json_container_in_body.textContent = ""; 	// remove the previous not formatted JSON text
 
