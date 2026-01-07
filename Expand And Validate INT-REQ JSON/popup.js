@@ -375,17 +375,23 @@ function reformatEmbeddedJson() {
 	 
 	var subTabs = document.getElementsByClassName("tabContent");
 	//DEBUG: console.log('subTabs.length: ' + subTabs.length);
-	console.assert(subTabs.length > 0);
+	if (subTabs.length === 0) {
+		console.error('No subTabs found');
+	}
 
 	var subTabsActive = document.getElementsByClassName("tabContent active");
 	//DEBUG: console.log('subTabsActive.length: ' + subTabsActive.length);
-	console.assert(subTabsActive.length > 0);
+	if (subTabsActive.length === 0) {
+		console.error('No active subTabs found');
+	}
 
 	// Search all sub-tabs on the SalesForce page INT-REQ-*** where JSON blocks can be found
 	var httpsRequestSections = [];
 	var pageSections = document.getElementsByClassName("test-id__section"); 
 	//DEBUG: console.log('pageSections.length: ' + pageSections.length);
-	console.assert(pageSections.length > 0);
+	if (pageSections.length === 0) {
+		console.error('No pageSections found');
+	}
 	for (let i=0; i<pageSections.length; i++) {
 		var pageSectionHeaderTitles = pageSections[i].getElementsByClassName("test-id__section-header-title");
 		//DEBUG: console.log('pageSectionHeaderTitles.length: ' + pageSectionHeaderTitles.length);
@@ -401,12 +407,23 @@ function reformatEmbeddedJson() {
 	}
 
 	// For each INT-REQ-*** subTab, prettify JSON blocks on it
+	console.log('*** PROCESSING ' + httpsRequestSections.length + ' HTTP Request Content sections ***');
 	for (let i=0; i<httpsRequestSections.length; i++) {
+		console.log('--- Processing section ' + (i+1) + ' of ' + httpsRequestSections.length + ' ---');
+		// RESET STATE for each section to prevent pollution
+		indentStack = [];
+		indent = "";
+		validationErrMessages = [];
+		validationResultsMap = new Map();
+		
 		var httpsRequestSection = httpsRequestSections[i];
 		// "HTTP Request Content" expand/collapse button serving as a visual header of the "HTTP Request Content" section
 		var buttons = httpsRequestSection.getElementsByClassName("test-id__section-header-button");
 		//DEBUG: console.log('Number of buttons: ' + buttons.length);
-		console.assert(buttons.length > 0);
+		if (buttons.length === 0) {
+			console.error('No buttons found in HTTP Request Content section');
+			continue;
+		}
 		var isSectionExpanded = buttons[0].getAttribute("aria-expanded") == "true";
 		//DEBUG: console.log('isSectionExpanded: ' + isSectionExpanded);
 		if(!isSectionExpanded ) {
@@ -421,6 +438,12 @@ function reformatEmbeddedJson() {
 		var json_container_in_header = json_containers[0];
 		var json_container_in_body = json_containers[1];
 		//DEBUG: console.log(json_container_in_header.textContent);
+
+		// Check if this section was already processed (contains <pre> tag instead of raw JSON)
+		if (json_container_in_body.getElementsByTagName("pre").length > 0) {
+			console.log('Section ' + (i+1) + ' already processed, skipping');
+			continue;
+		}
 
 		// Temporary element created from the embedded JSON text
 		var json_tmp_obj = undefined;
@@ -437,7 +460,6 @@ function reformatEmbeddedJson() {
 		
 		// PHASE 4: Perform validation pass before rendering
 		validationResultsMap = performValidation(json_tmp_obj);
-		validationErrMessages = []; // Reset error messages
 		
 		jsonRootHtmlElement = document.createElement("pre");
 		// Manually traverse and format JSON instead of using JSON.stringify with replacer
