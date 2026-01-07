@@ -575,7 +575,7 @@ function scheduleProcessing() {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	if (message.action === 'processNow') {
-		console.log('[JSONFormatter] Manual trigger received from popup');
+		console.log('[JSONFormatter] Manual trigger received (icon click)');
 		processVisibleSections();
 	}
 });
