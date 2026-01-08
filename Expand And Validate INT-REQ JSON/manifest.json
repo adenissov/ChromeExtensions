@@ -1,5 +1,5 @@
 {
-  "name": "Expand JSON in Integration Request v2.3 (Icon Click)",
+  "name": "311 Integration Request Validator",
   "description": "Auto-formats JSON and validates fields when switching Salesforce tabs",
   "version": "2.3",
   "manifest_version": 3,
@@ -22,17 +22,17 @@
   "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "action": {
     "default_icon": {
-      "16": "/images/get_started16.png",
-      "32": "/images/get_started32.png",
-      "48": "/images/get_started48.png",
-      "128": "/images/get_started128.png"
+      "16": "/images/integration_request_validator_icon16.png",
+      "32": "/images/integration_request_validator_icon32.png",
+      "48": "/images/integration_request_validator_icon48.png",
+      "128": "/images/integration_request_validator_icon128.png"
     }
   },
   "icons": {
-    "16": "/images/get_started16.png",
-    "32": "/images/get_started32.png",
-    "48": "/images/get_started48.png",
-    "128": "/images/get_started128.png"
+    "16": "/images/integration_request_validator_icon16.png",
+    "32": "/images/integration_request_validator_icon32.png",
+    "48": "/images/integration_request_validator_icon48.png",
+    "128": "/images/integration_request_validator_icon128.png"
   },
   
   "options_page": "options.html"
