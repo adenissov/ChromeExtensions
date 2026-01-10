@@ -9,7 +9,7 @@
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'searchIntegrationRequest',
-    title: 'Search Integration Request',
+    title: 'Search related Integration Request',
     contexts: ['link', 'selection']  // Show on links and selected text
   });
   console.log('[IR Finder] Context menu created');
