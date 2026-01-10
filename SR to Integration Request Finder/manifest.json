@@ -1,0 +1,37 @@
+{
+  "name": "311 SR to Integration Request Finder",
+  "description": "Right-click on Service Request number to search for its Integration Request",
+  "version": "1.0",
+  "manifest_version": 3,
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.salesforce.com/*",
+        "https://*.force.com/*",
+        "https://*.lightning.force.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "permissions": ["contextMenus", "activeTab", "scripting", "tabs"],
+  "action": {
+    "default_title": "311 SR to Integration Request Finder",
+    "default_icon": {
+      "16": "/images/sr_to_ir_finder_icon16.png",
+      "32": "/images/sr_to_ir_finder_icon32.png",
+      "48": "/images/sr_to_ir_finder_icon48.png",
+      "128": "/images/sr_to_ir_finder_icon128.png"
+    }
+  },
+  "icons": {
+    "16": "/images/sr_to_ir_finder_icon16.png",
+    "32": "/images/sr_to_ir_finder_icon32.png",
+    "48": "/images/sr_to_ir_finder_icon48.png",
+    "128": "/images/sr_to_ir_finder_icon128.png"
+  }
+}
