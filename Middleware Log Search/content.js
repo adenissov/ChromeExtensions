@@ -126,6 +126,35 @@ function extractSRNumber(element) {
 }
 
 //=============================================================================
+// HELPER FUNCTIONS
+//=============================================================================
+
+/**
+ * Safely send message to background script
+ * Handles cases where extension context is invalidated (e.g., after extension reload)
+ */
+function safeSendMessage(message) {
+  try {
+    // Check if chrome.runtime is available
+    if (!chrome.runtime || !chrome.runtime.sendMessage) {
+      console.log('[Middleware Log] Extension context invalidated - please refresh the page');
+      return;
+    }
+    
+    chrome.runtime.sendMessage(message, (response) => {
+      // Check for errors (extension context invalidated)
+      if (chrome.runtime.lastError) {
+        console.log('[Middleware Log] Message failed:', chrome.runtime.lastError.message);
+        console.log('[Middleware Log] Please refresh the page to reconnect to the extension');
+      }
+    });
+  } catch (error) {
+    console.log('[Middleware Log] Extension context invalidated:', error.message);
+    console.log('[Middleware Log] Please refresh the page to reconnect to the extension');
+  }
+}
+
+//=============================================================================
 // RIGHT-CLICK HANDLER
 //=============================================================================
 
@@ -142,7 +171,7 @@ document.addEventListener('contextmenu', (event) => {
   }
 
   // Send validation result to background script to enable/disable menu
-  chrome.runtime.sendMessage({
+  safeSendMessage({
     action: 'updateMenuState',
     isValid: isValid,
     srNumber: lastSRNumber
