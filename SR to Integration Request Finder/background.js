@@ -9,7 +9,7 @@
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'searchIntegrationRequest',
-    title: 'Search related Integration Request',
+    title: 'Search Integration Request',
     contexts: ['all'],  // Show on all contexts, control via enabled state
     enabled: false      // Disabled by default until valid SR detected
   });
