@@ -22,7 +22,7 @@ let lastValidSRNumber = null;
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'middlewareLogSearch',
-    title: 'Middleware Log',
+    title: 'Search in Middleware Log',
     contexts: ['all'],
     enabled: false  // Disabled by default until valid SR detected
   });
