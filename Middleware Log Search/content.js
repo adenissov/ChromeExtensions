@@ -115,12 +115,6 @@ function extractSRNumber(element) {
     return null;
   }
 
-  // Check if in Request Number column
-  if (!isInRequestNumberColumn(link)) {
-    console.log('[Middleware Log] Link is not in Request Number column');
-    return null;
-  }
-
   console.log('[Middleware Log] Valid SR number found:', linkText);
   return linkText;
 }
