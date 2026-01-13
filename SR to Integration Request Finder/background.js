@@ -10,9 +10,29 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'searchIntegrationRequest',
     title: 'Search related Integration Request',
-    contexts: ['link', 'selection']  // Show on links and selected text
+    contexts: ['all'],  // Show on all contexts, control via enabled state
+    enabled: false      // Disabled by default until valid SR detected
   });
-  console.log('[IR Finder] Context menu created');
+  console.log('[IR Finder] Context menu created (disabled by default)');
+});
+
+//=============================================================================
+// MENU STATE UPDATE LISTENER
+//=============================================================================
+
+// Listen for validation results from content script to enable/disable menu
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'updateMenuState') {
+    // Update context menu enabled state based on validation
+    chrome.contextMenus.update('searchIntegrationRequest', {
+      enabled: message.isValid
+    }).then(() => {
+      console.log('[IR Finder] Menu state updated:', message.isValid ? 'enabled' : 'disabled', 
+        '| isLink:', message.isLink, '| srNumber:', message.srNumber);
+    }).catch(err => {
+      console.error('[IR Finder] Failed to update menu state:', err);
+    });
+  }
 });
 
 //=============================================================================
@@ -22,7 +42,7 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'searchIntegrationRequest') {
     console.log('[IR Finder] Context menu clicked, tab:', tab.id, 'frameId:', info.frameId);
-    
+
     try {
       // Method 1: Try sending message to all frames
       await chrome.tabs.sendMessage(tab.id, {
@@ -34,7 +54,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       console.log('[IR Finder] Message sent to tab');
     } catch (err) {
       console.log('[IR Finder] sendMessage failed, trying executeScript:', err.message);
-      
+
       // Method 2: Fallback to executeScript if message fails
       try {
         await chrome.scripting.executeScript({
