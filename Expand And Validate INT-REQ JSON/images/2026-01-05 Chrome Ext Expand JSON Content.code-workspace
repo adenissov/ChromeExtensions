@@ -7,5 +7,9 @@
 			"path": "../../SR to Integration Request Finder"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"chat.tools.terminal.autoApprove": {
+			"Copy-Item": true
+		}
+	}
 }

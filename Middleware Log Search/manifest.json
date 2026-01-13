@@ -1,0 +1,37 @@
+{
+  "name": "Middleware Log Search",
+  "description": "Right-click on Service Request number to search middleware logs in Kibana",
+  "version": "1.0",
+  "manifest_version": 3,
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.salesforce.com/*",
+        "https://*.force.com/*",
+        "https://*.lightning.force.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "permissions": ["contextMenus", "activeTab", "tabs"],
+  "action": {
+    "default_title": "Middleware Log Search",
+    "default_icon": {
+      "16": "/images/sr_in_middlware_search16.png",
+      "32": "/images/sr_in_middlware_search32.png",
+      "48": "/images/sr_in_middlware_search48.png",
+      "128": "/images/sr_in_middlware_search128.png"
+    }
+  },
+  "icons": {
+    "16": "/images/sr_in_middlware_search16.png",
+    "32": "/images/sr_in_middlware_search32.png",
+    "48": "/images/sr_in_middlware_search48.png",
+    "128": "/images/sr_in_middlware_search128.png"
+  }
+}
