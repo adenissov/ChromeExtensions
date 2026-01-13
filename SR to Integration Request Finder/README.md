@@ -27,8 +27,8 @@ When working with Service Requests in Salesforce, staff often need to view the I
 ## Features
 
 - **Context Menu Integration**: Adds "Search Integration Request" option to right-click menu
-- **Smart SR Detection**: Recognizes 7-10 digit numbers as Service Request numbers
-- **Column Validation**: Optionally validates the link is in a "Request Number" column
+- **Dynamic Menu State**: Menu item is enabled only when right-clicking on valid SR number links (8-9 digits)
+- **Smart SR Detection**: Recognizes 8-9 digit numbers as Service Request numbers
 - **Global Search**: Uses Salesforce's built-in global search
 - **Works Everywhere**: Functions on all Salesforce domains (production, sandbox)
 - **Multi-Search Support**: Can search multiple different SRs consecutively
@@ -261,8 +261,21 @@ The extension activates on:
 The extension recognizes SR numbers by:
 1. Finding the closest `<a>` link element to the right-click
 2. Extracting the link text
-3. Validating it matches the pattern: 7-10 digits (`/^\d{7,10}$/`)
-4. Optionally checking if it's in a "Request Number" column
+3. Validating it matches the pattern: 8-9 digits (`/^\d{8,9}$/`)
+
+### Dynamic Menu Behavior
+
+The context menu item is dynamically enabled/disabled based on validation:
+
+| Condition | Menu State |
+|-----------|------------|
+| Not a link | **Disabled** |
+| Link, but text is not 8-9 digits | **Disabled** |
+| Link, text has letters | **Disabled** |
+| Link, text is 7 digits (e.g., "1234567") | **Disabled** |
+| Link, text is 10 digits (e.g., "1234567890") | **Disabled** |
+| Link, text is 8 digits (e.g., "08496105") | **Enabled** |
+| Link, text is 9 digits (e.g., "084961051") | **Enabled** |
 
 ---
 
@@ -313,8 +326,13 @@ SR to Integration Request Finder/
 
 ### SR number not detected
 - Make sure you're right-clicking directly on the SR number link
-- SR numbers must be 7-10 digits
+- SR numbers must be 8-9 digits
 - Check the console (F12) for `[IR Finder]` messages
+
+### Menu item is grayed out (disabled)
+- The element you right-clicked is not a link (`<a>` tag)
+- The link text is not a valid SR number (must be exactly 8-9 digits)
+- Check the console for `[IR Finder] Menu state updated:` messages
 
 ### Extension not loading
 - Verify the URL matches `*.salesforce.com` or `*.force.com`
@@ -338,9 +356,14 @@ Enable verbose logging by checking the browser console for `[IR Finder]` prefixe
 3. ✅ Same SR twice works (after cooldown)
 4. ✅ Works in iframes
 5. ✅ Works on different Salesforce pages
+6. ✅ Right-click on 8-digit SR link → Menu **enabled**
+7. ✅ Right-click on 9-digit SR link → Menu **enabled**
+8. ✅ Right-click on 7-digit number link → Menu **disabled**
+9. ✅ Right-click on non-link text → Menu **disabled**
 
 ---
 
 ## Version History
 
+- **v1.1** - Dynamic context menu: menu item enabled/disabled based on SR number validation
 - **v1.0** - Initial release with context menu search functionality

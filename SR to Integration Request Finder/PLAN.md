@@ -131,16 +131,16 @@ User right-clicks SR number
 
 ### 2. SR Number Detection
 
-**Decision**: Accept any 7-10 digit number as a potential SR number.
+**Decision**: Accept 8-9 digit numbers as SR numbers.
 
 ```javascript
-/^\d{7,10}$/
+/^\d{8,9}$/
 ```
 
 **Rationale**:
 - SR numbers are typically 8 digits (e.g., `08475332`)
-- Allowing 7-10 provides flexibility
-- Column header validation is optional (fallback behavior)
+- 9 digits allowed for future growth
+- Stricter validation reduces false positives
 
 ### 3. Search String Format
 
@@ -185,6 +185,47 @@ searchBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ... }));
 | `activeTab` | Access current tab to send messages |
 | `scripting` | Inject content script into Salesforce pages |
 
+## Implemented Features
+
+### Dynamic Context Menu Enable/Disable
+
+The context menu item "Search Integration Request" is dynamically enabled/disabled based on what the user right-clicks:
+
+**How it works:**
+1. User right-clicks on an element
+2. Content script's `contextmenu` event fires (before menu appears)
+3. Content script validates: Is it a link? Is the text 8-9 digits?
+4. Content script sends validation result to background script
+5. Background script calls `chrome.contextMenus.update()` to enable/disable
+6. Context menu appears with correct state
+
+**Implementation details:**
+- Menu is disabled by default
+- Content script sends `updateMenuState` message on every right-click
+- Background script listens for this message and updates menu state
+- If timing fails (race condition), menu stays disabled (safe default)
+
+**Code flow:**
+```javascript
+// content.js - on contextmenu event
+chrome.runtime.sendMessage({
+  action: 'updateMenuState',
+  isValid: isLink && isValidSR,
+  srNumber: isValidSR ? linkText : null
+});
+
+// background.js - message listener
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.action === 'updateMenuState') {
+    chrome.contextMenus.update('searchIntegrationRequest', {
+      enabled: message.isValid
+    });
+  }
+});
+```
+
+---
+
 ## Future Enhancements
 
 ### Potential Improvements
@@ -201,8 +242,17 @@ searchBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ... }));
 2. **Search Box Must Be Visible**: Global search must be on screen
 3. **Single SR Only**: Cannot search multiple SRs simultaneously
 
+### Risks & Mitigations
+
+| Risk | Mitigation |
+|------|------------|
+| Timing: Menu may show before update completes | Set default to disabled; if timing fails, user just can't click |
+| Multiple iframes send conflicting messages | Last message wins; this matches user's actual right-click location |
+| Performance: Message on every right-click | Messages are lightweight; negligible impact |
+
 ## Testing Checklist
 
+### Core Functionality
 - [ ] Right-click on SR number shows context menu
 - [ ] Clicking menu item triggers search
 - [ ] Search box receives correct value (`Request|{SR_NUMBER}`)
@@ -210,13 +260,22 @@ searchBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ... }));
 - [ ] Works on production Salesforce
 - [ ] Works on sandbox Salesforce
 - [ ] Error message shown if search box not found
-- [ ] Error message shown if no valid SR number
+
+### Dynamic Menu State
+- [ ] Right-click on 8-digit SR link → Menu **enabled**
+- [ ] Right-click on 9-digit SR link → Menu **enabled**
+- [ ] Right-click on 7-digit number link → Menu **disabled**
+- [ ] Right-click on 10-digit number link → Menu **disabled**
+- [ ] Right-click on text (not link) → Menu **disabled**
+- [ ] Right-click on non-numeric link → Menu **disabled**
+- [ ] Right-click on empty area → Menu **disabled**
+- [ ] Menu works correctly after page navigation
+- [ ] Menu works correctly in iframes
 
 ## Version History
 
 | Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | Jan 2026 | Initial release |
+|---------|------|---------|| 1.1 | Jan 2026 | Dynamic context menu enable/disable based on SR validation || 1.0 | Jan 2026 | Initial release |
 
 ## Related Projects
 
