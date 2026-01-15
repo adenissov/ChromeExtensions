@@ -16,7 +16,7 @@ City of Toronto 311 staff working in Salesforce frequently need to navigate from
 6. Configure filter: `Identifier contains Request|{SR_NUMBER}`
 7. Click the Integration Request link
 
-**Goal**: Reduce this 7-step process to 2 clicks.
+**Goal**: Reduce this 7-step process to 1-2 clicks (1 click when single result found, 2 clicks when user must choose from multiple results).
 
 ## Solution Architecture
 
@@ -51,7 +51,7 @@ Instead of using Salesforce APIs (which require authentication), we leverage:
 │  │   menu on install│ ────► │ • Extract SR number      │   │
 │  │                 │         │ • Find search box        │   │
 │  │ • Handle menu   │         │ • Execute search         │   │
-│  │   click events  │         │                          │   │
+│  │   click events  │         │ • Auto-click single result│  │
 │  │                 │         │                          │   │
 │  └─────────────────┘         └─────────────────────────┘   │
 │                                                              │
@@ -105,10 +105,24 @@ User right-clicks SR number
          │
          ▼
 ┌─────────────────────────┐
-│ Salesforce shows search │
-│ results with matching   │
-│ Integration Request     │
+│ Start polling for       │
+│ INT-REQ search results  │
+│ (every 300ms, max 5sec) │
 └─────────────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│ Count INT-REQ links     │
+│ Wait for stable count   │
+└─────────────────────────┘
+         │
+         ├──── 0 results ────► Do nothing
+         │
+         ├──── 1 result ─────► Auto-click link
+         │                     (opens Integration Request)
+         │
+         └──── 2+ results ───► Do nothing
+                               (user chooses)
 ```
 
 ## Key Design Decisions
@@ -224,6 +238,40 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 ```
 
+### Auto-Click Single Search Result
+
+When exactly one Integration Request is found in search results, the extension automatically clicks it to open the record.
+
+**How it works:**
+1. After triggering Enter key, start polling for results
+2. Look for links with `data-refid="recordId"` attribute
+3. Filter to links matching `INT-REQ-NNNNNNNN` pattern (8-9 digits)
+4. Wait for "stable" count (same count on 2 consecutive polls)
+5. If exactly 1 result is stable, auto-click it
+6. Timeout after 5 seconds if no stable results
+
+**Configuration constants:**
+```javascript
+const AUTO_CLICK_ENABLED = true;              // Feature toggle
+const AUTO_CLICK_MAX_WAIT_MS = 5000;          // Max wait time
+const AUTO_CLICK_POLL_INTERVAL_MS = 300;      // Poll interval
+const AUTO_CLICK_STABLE_COUNT = 2;            // Required stable checks
+const INT_REQ_PATTERN = /^INT-REQ-\d{8,9}$/;  // Link text pattern
+```
+
+**Key functions:**
+- `findIntegrationRequestLinks()` - Queries DOM for INT-REQ links
+- `autoClickSingleResult(link)` - Performs the click
+- `waitForSearchResultsAndAutoClick()` - Orchestrates polling and stability check
+
+**Auto-click behavior:**
+| Results | Action |
+|---------|--------|
+| 0 | Log "No results found", stop polling |
+| 1 | Auto-click the link, open Integration Request |
+| 2+ | Log "Multiple results", user must choose |
+| Timeout | Log warning after 5 seconds, stop polling |
+
 ---
 
 ## Future Enhancements
@@ -231,16 +279,17 @@ chrome.runtime.onMessage.addListener((message) => {
 ### Potential Improvements
 
 1. **Custom Icons**: Design unique icons for this extension
-2. **Direct Navigation**: If only one result, auto-open the Integration Request
-3. **Keyboard Shortcut**: Add hotkey to search selected text
-4. **History**: Remember recent searches
-5. **Multiple SR Support**: Search for multiple SRs at once
+2. **Keyboard Shortcut**: Add hotkey to search selected text
+3. **History**: Remember recent searches
+4. **Multiple SR Support**: Search for multiple SRs at once
+5. **User Preferences**: Popup settings to toggle auto-click on/off
+6. **Visual Feedback**: Toast notification when auto-clicking
 
 ### Known Limitations
 
-1. **Manual Click Required**: User must click the search result to open IR
-2. **Search Box Must Be Visible**: Global search must be on screen
-3. **Single SR Only**: Cannot search multiple SRs simultaneously
+1. **Search Box Must Be Visible**: Global search must be on screen
+2. **Single SR Only**: Cannot search multiple SRs simultaneously
+3. **Auto-click Timeout**: If results take >5 seconds to load, auto-click won't trigger
 
 ### Risks & Mitigations
 
@@ -272,10 +321,21 @@ chrome.runtime.onMessage.addListener((message) => {
 - [ ] Menu works correctly after page navigation
 - [ ] Menu works correctly in iframes
 
+### Auto-Click Single Result
+- [ ] Single INT-REQ result → Auto-clicks and opens record
+- [ ] No results → Logs message, does nothing
+- [ ] Multiple INT-REQ results → Logs message, user must choose
+- [ ] Slow-loading results (2-3 sec) → Auto-click still works
+- [ ] Results take >5 seconds → Timeout, no error
+- [ ] Rapid consecutive searches → Handled by cooldown
+
 ## Version History
 
 | Version | Date | Changes |
-|---------|------|---------|| 1.1 | Jan 2026 | Dynamic context menu enable/disable based on SR validation || 1.0 | Jan 2026 | Initial release |
+|---------|------|---------|  
+| 1.2 | Jan 2026 | Auto-click single result: automatically opens Integration Request when exactly one match found |
+| 1.1 | Jan 2026 | Dynamic context menu enable/disable based on SR validation |
+| 1.0 | Jan 2026 | Initial release |
 
 ## Related Projects
 

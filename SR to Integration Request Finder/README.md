@@ -11,7 +11,7 @@ When working with Service Requests in Salesforce, staff often need to view the I
 4. Opening a list view
 5. Configuring filters to search by Identifier
 
-**This extension reduces that to 2 clicks**: right-click on SR number → click search result.
+**This extension reduces that to 1-2 clicks**: right-click on SR number → select menu item → auto-opens if single result found.
 
 ## How It Works
 
@@ -22,7 +22,16 @@ When working with Service Requests in Salesforce, staff often need to view the I
    - Opens the Salesforce global search dialog
    - Enters the search query: `Request|{SR_NUMBER}`
    - Triggers the search
-4. **Click** on the Integration Request in the search results
+   - **Auto-clicks** the Integration Request if exactly one result is found
+4. If multiple results are found, click the desired Integration Request
+
+### Auto-Click Behavior
+
+| Search Results | Extension Action |
+|----------------|------------------|
+| **0 results** | Does nothing (no matches found) |
+| **1 result** | **Automatically opens** the Integration Request |
+| **2+ results** | Does nothing (user must choose) |
 
 ## Features
 
@@ -30,6 +39,7 @@ When working with Service Requests in Salesforce, staff often need to view the I
 - **Dynamic Menu State**: Menu item is enabled only when right-clicking on valid SR number links (8-9 digits)
 - **Smart SR Detection**: Recognizes 8-9 digit numbers as Service Request numbers
 - **Global Search**: Uses Salesforce's built-in global search
+- **Auto-Click Single Result**: Automatically opens the Integration Request when exactly one match is found
 - **Works Everywhere**: Functions on all Salesforce domains (production, sandbox)
 - **Multi-Search Support**: Can search multiple different SRs consecutively
 
@@ -118,7 +128,47 @@ searchBox.dispatchEvent(new InputEvent('input', {
 }));
 ```
 
-### 4. Triggering Enter Key in Lightning Components
+### 4. Auto-Click Single Search Result
+
+**Challenge**: After search results appear, automatically click if there's exactly one Integration Request result, but avoid clicking prematurely or on wrong elements.
+
+**Solution**: Polling with stability check:
+1. After triggering Enter, start watching for search results
+2. Poll every 300ms for INT-REQ links matching pattern `INT-REQ-NNNNNNNN`
+3. Wait for "stable" count (same count on 2 consecutive checks)
+4. If exactly 1 result is stable, auto-click it
+5. Timeout after 5 seconds if results never stabilize
+
+```javascript
+// Integration Request link detection
+const INT_REQ_PATTERN = /^INT-REQ-\d{8,9}$/;
+
+function findIntegrationRequestLinks() {
+  const allLinks = document.querySelectorAll('a[data-refid="recordId"]');
+  return Array.from(allLinks).filter(link => 
+    INT_REQ_PATTERN.test(link.textContent.trim())
+  );
+}
+
+// Polling with stability
+function waitForSearchResultsAndAutoClick() {
+  let lastCount = -1;
+  let stableChecks = 0;
+  
+  function checkResults() {
+    const links = findIntegrationRequestLinks();
+    if (links.length === lastCount) stableChecks++;
+    else { stableChecks = 0; lastCount = links.length; }
+    
+    if (stableChecks >= 2 && links.length === 1) {
+      links[0].click(); // Auto-click!
+    }
+  }
+  // Poll every 300ms for up to 5 seconds
+}
+```
+
+### 5. Triggering Enter Key in Lightning Components
 
 **Challenge**: Keyboard events need specific properties for Lightning to recognize them.
 
@@ -339,6 +389,17 @@ SR to Integration Request Finder/
 - Check `chrome://extensions/` for errors
 - Try removing and re-adding the extension
 
+### Auto-click not working
+- Check console for `[IR Finder] Found X INT-REQ link(s)` messages
+- Auto-click only triggers when **exactly 1** result is found
+- Results must be stable (same count on 2 consecutive checks)
+- Maximum wait time is 5 seconds after search
+- If disabled, check `AUTO_CLICK_ENABLED` constant in content.js
+
+### Auto-click happening when it shouldn't
+- Auto-click only triggers for links matching `INT-REQ-NNNNNNNN` pattern
+- Check if multiple Integration Requests have similar identifiers
+
 ---
 
 ## Development Notes
@@ -349,6 +410,11 @@ Enable verbose logging by checking the browser console for `[IR Finder]` prefixe
 - `[IR Finder] Received search request from background` - Message passing working
 - `[IR Finder] In iframe, sending SR to top frame:` - Cross-frame communication working
 - `[IR Finder] Clicking search button to open dialog` - Search initiation
+- `[IR Finder] Starting auto-click watch for search results...` - Auto-click polling started
+- `[IR Finder] Found N INT-REQ link(s) at Xms` - Result detection progress
+- `[IR Finder] Single stable result found, auto-clicking` - Auto-click triggered
+- `[IR Finder] Multiple results found (N), user must choose` - User action required
+- `[IR Finder] Auto-click timeout reached` - 5 second timeout hit
 
 ### Testing Checklist
 1. ✅ First search works
@@ -360,10 +426,16 @@ Enable verbose logging by checking the browser console for `[IR Finder]` prefixe
 7. ✅ Right-click on 9-digit SR link → Menu **enabled**
 8. ✅ Right-click on 7-digit number link → Menu **disabled**
 9. ✅ Right-click on non-link text → Menu **disabled**
+10. ✅ Single search result → Auto-clicks and opens Integration Request
+11. ✅ No search results → Does nothing (no error)
+12. ✅ Multiple search results → Does nothing (user chooses)
+13. ✅ Slow-loading results → Auto-click still works (within 5 seconds)
+14. ✅ Results never appear → Timeout after 5 seconds, no error
 
 ---
 
 ## Version History
 
+- **v1.2** - Auto-click single result: automatically opens Integration Request when exactly one match found
 - **v1.1** - Dynamic context menu: menu item enabled/disabled based on SR number validation
 - **v1.0** - Initial release with context menu search functionality
