@@ -11,6 +11,13 @@ console.log('[IR Finder] *** CONTENT SCRIPT STARTING ***', window.location.href)
 const SR_COLUMN_HEADER = 'Request Number';  // Column header to detect
 const SEARCH_PREFIX = 'Request|';            // Prefix for search query
 
+// Auto-click configuration
+const AUTO_CLICK_ENABLED = true;              // Feature toggle
+const AUTO_CLICK_MAX_WAIT_MS = 5000;          // Max time to wait for results
+const AUTO_CLICK_POLL_INTERVAL_MS = 300;      // How often to check for results
+const AUTO_CLICK_STABLE_COUNT = 2;            // # of consistent checks before acting
+const INT_REQ_PATTERN = /^INT-REQ-\d{8,9}$/;  // Pattern for valid INT-REQ names
+
 // Only run search logic in the top frame (where the search box is)
 const IS_TOP_FRAME = (window === window.top);
 
@@ -361,6 +368,9 @@ function enterSearchText(searchBox, searchText) {
       searchBox.dispatchEvent(keyupEvent);
 
       console.log('[IR Finder] Search triggered for:', searchText);
+      
+      // Start watching for results to auto-click if single result
+      waitForSearchResultsAndAutoClick();
     }, 300);
   }, 200);
 }
@@ -423,6 +433,108 @@ function findAndClickSearchButton() {
 
   console.log('[IR Finder] Search button not found');
   return null;
+}
+
+//=============================================================================
+// AUTO-CLICK SINGLE RESULT FUNCTIONALITY
+//=============================================================================
+
+/**
+ * Find all Integration Request links in current search results
+ * Looks for links with data-refid="recordId" and text matching INT-REQ-NNNNNNNN
+ * @returns {HTMLElement[]} Array of matching <a> elements
+ */
+function findIntegrationRequestLinks() {
+  // Query for all potential INT-REQ links
+  const allLinks = document.querySelectorAll('a[data-refid="recordId"]');
+  
+  // Filter to only those matching INT-REQ pattern
+  const validLinks = Array.from(allLinks).filter(link => {
+    const text = link.textContent.trim();
+    return INT_REQ_PATTERN.test(text);
+  });
+  
+  return validLinks;
+}
+
+/**
+ * Auto-click on a single Integration Request link
+ * @param {HTMLElement} link - The <a> element to click
+ */
+function autoClickSingleResult(link) {
+  const linkText = link.textContent.trim();
+  const linkTitle = link.getAttribute('title') || linkText;
+  
+  console.log('[IR Finder] Auto-clicking single result:', linkTitle);
+  
+  try {
+    // Use click() to navigate
+    link.click();
+    console.log('[IR Finder] Auto-click successful');
+  } catch (err) {
+    console.error('[IR Finder] Auto-click failed:', err);
+  }
+}
+
+/**
+ * Wait for search results to load, then auto-click if exactly one result
+ * Uses polling with stability check to ensure results are fully loaded
+ */
+function waitForSearchResultsAndAutoClick() {
+  if (!AUTO_CLICK_ENABLED) {
+    console.log('[IR Finder] Auto-click is disabled');
+    return;
+  }
+  
+  console.log('[IR Finder] Starting auto-click watch for search results...');
+  
+  const startTime = Date.now();
+  let lastCount = -1;
+  let stableChecks = 0;
+  
+  function checkResults() {
+    const elapsed = Date.now() - startTime;
+    
+    // Timeout check
+    if (elapsed > AUTO_CLICK_MAX_WAIT_MS) {
+      console.log('[IR Finder] Auto-click timeout reached, stopping watch');
+      return;
+    }
+    
+    // Find INT-REQ links
+    const links = findIntegrationRequestLinks();
+    const currentCount = links.length;
+    
+    console.log('[IR Finder] Found', currentCount, 'INT-REQ link(s) at', elapsed, 'ms');
+    
+    // Check for stability (same count as last check)
+    if (currentCount === lastCount) {
+      stableChecks++;
+    } else {
+      stableChecks = 0;
+      lastCount = currentCount;
+    }
+    
+    // If we have stable results
+    if (stableChecks >= AUTO_CLICK_STABLE_COUNT) {
+      if (currentCount === 1) {
+        // Exactly one result - auto-click!
+        console.log('[IR Finder] Single stable result found, auto-clicking');
+        autoClickSingleResult(links[0]);
+      } else if (currentCount === 0) {
+        console.log('[IR Finder] No results found, stopping watch');
+      } else {
+        console.log('[IR Finder] Multiple results found (' + currentCount + '), user must choose');
+      }
+      return; // Stop polling
+    }
+    
+    // Continue polling
+    setTimeout(checkResults, AUTO_CLICK_POLL_INTERVAL_MS);
+  }
+  
+  // Start polling after a short initial delay (let page start loading)
+  setTimeout(checkResults, AUTO_CLICK_POLL_INTERVAL_MS);
 }
 
 //=============================================================================
