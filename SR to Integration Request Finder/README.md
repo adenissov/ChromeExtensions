@@ -1,331 +1,189 @@
 # 311 SR to Integration Request Finder
 
-A Chrome/Edge extension for City of Toronto 311 staff that allows quick navigation from a Service Request to its corresponding Integration Request in Salesforce.
+A Chrome/Edge extension for City of Toronto 311 staff that provides two key Salesforce productivity features:
 
-## Purpose
+1. **SR to IR Finder** - Quick navigation from Service Request to Integration Request via right-click menu
+2. **JSON Formatter & Validator** - Auto-formats and validates JSON in Integration Request pages
 
-When working with Service Requests in Salesforce, staff often need to view the Integration Request associated with a specific SR. The manual process involves:
-1. Going to App Launcher
-2. Clicking "View All"
-3. Scrolling to "Integration Requests"
-4. Opening a list view
-5. Configuring filters to search by Identifier
+## Features Overview
+
+| Feature | Trigger | Description |
+|---------|---------|-------------|
+| **SR to IR Finder** | Right-click on SR number | Searches for and auto-opens the corresponding Integration Request |
+| **JSON Formatter** | Automatic / Click icon | Formats JSON and highlights validation errors in INT-REQ pages |
+
+---
+
+## Feature 1: SR to Integration Request Finder
+
+### Purpose
+
+When working with Service Requests in Salesforce, staff often need to view the Integration Request. The manual process involves 7 steps through App Launcher, list views, and filters.
 
 **This extension reduces that to 1-2 clicks**: right-click on SR number → select menu item → auto-opens if single result found.
 
-## How It Works
+### How to Use
 
-1. **Right-click** on a Service Request number (e.g., `08475332`) in any "Request Number" column
+1. **Right-click** on a Service Request number (e.g., `08475332`) in any Salesforce page
 2. Select **"Search Integration Request"** from the context menu
 3. The extension automatically:
-   - Captures the SR number from the link text
-   - Opens the Salesforce global search dialog
+   - Opens the Salesforce global search
    - Enters the search query: `Request|{SR_NUMBER}`
-   - Triggers the search
    - **Auto-clicks** the Integration Request if exactly one result is found
-4. If multiple results are found, click the desired Integration Request
 
 ### Auto-Click Behavior
 
 | Search Results | Extension Action |
 |----------------|------------------|
-| **0 results** | Does nothing (no matches found) |
+| **0 results** | Does nothing |
 | **1 result** | **Automatically opens** the Integration Request |
 | **2+ results** | Does nothing (user must choose) |
 
-## Features
+### Menu Enable/Disable
 
-- **Context Menu Integration**: Adds "Search Integration Request" option to right-click menu
-- **Dynamic Menu State**: Menu item is enabled only when right-clicking on valid SR number links (8-9 digits)
-- **Smart SR Detection**: Recognizes 8-9 digit numbers as Service Request numbers
-- **Global Search**: Uses Salesforce's built-in global search
-- **Auto-Click Single Result**: Automatically opens the Integration Request when exactly one match is found
-- **Works Everywhere**: Functions on all Salesforce domains (production, sandbox)
-- **Multi-Search Support**: Can search multiple different SRs consecutively
-
----
-
-## Architecture & Design Decisions
-
-This section documents key technical decisions for future reference when building similar Salesforce extensions.
-
-### 1. Salesforce iframe Architecture
-
-**Challenge**: Salesforce Lightning uses a complex multi-iframe structure. The SR data is often displayed in an iframe, while the search box is in the top-level frame.
-
-**Solution**: 
-- Content script runs with `"all_frames": true` in manifest
-- Use `window === window.top` to detect if running in top frame or iframe
-- Cross-frame communication via `window.postMessage()` API
-
-```javascript
-// Detect frame type
-const IS_TOP_FRAME = (window === window.top);
-
-// From iframe, send data to top frame
-if (!IS_TOP_FRAME) {
-  window.top.postMessage({ 
-    type: 'IR_FINDER_SEARCH', 
-    srNumber: srNumber 
-  }, '*');
-}
-
-// In top frame, listen for messages
-if (IS_TOP_FRAME) {
-  window.addEventListener('message', (event) => {
-    if (event.data && event.data.type === 'IR_FINDER_SEARCH') {
-      // Handle the search
-    }
-  });
-}
-```
-
-### 2. Salesforce Search Box is a BUTTON, Not an Input
-
-**Challenge**: The Salesforce global search appears to be an input field but is actually a **button** that opens a search dialog when clicked.
-
-**Solution**:
-1. First, look for the search **button** (not input)
-2. Click the button to open the search dialog
-3. Wait for the dialog to appear
-4. Find the input inside the opened dialog
-5. Enter text and trigger search
-
-```javascript
-// Search button selectors (NOT input!)
-const buttonSelectors = [
-  'button.search-button[aria-label="Search"]',
-  'button.search-button',
-  'button[aria-label="Search"]'
-];
-
-// After clicking button, find input in dialog
-const searchInput = document.querySelector('.forceSearchAssistantDialog input[type="search"]');
-```
-
-### 3. Setting Input Values in React/Lightning Components
-
-**Challenge**: Salesforce uses Lightning Web Components (built on React-like framework). Simply setting `input.value = "text"` doesn't work because the framework manages state internally.
-
-**Solution**: Use native property setter to bypass React's synthetic events:
-
-```javascript
-// Get the native setter (bypasses React)
-const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-  window.HTMLInputElement.prototype, 'value'
-).set;
-
-// Set value using native setter
-nativeInputValueSetter.call(searchBox, searchText);
-
-// Dispatch input events so framework recognizes the change
-searchBox.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-searchBox.dispatchEvent(new InputEvent('input', {
-  bubbles: true,
-  cancelable: true,
-  inputType: 'insertText',
-  data: searchText
-}));
-```
-
-### 4. Auto-Click Single Search Result
-
-**Challenge**: After search results appear, automatically click if there's exactly one Integration Request result, but avoid clicking prematurely or on wrong elements.
-
-**Solution**: Polling with stability check:
-1. After triggering Enter, start watching for search results
-2. Poll every 300ms for INT-REQ links matching pattern `INT-REQ-NNNNNNNN`
-3. Wait for "stable" count (same count on 2 consecutive checks)
-4. If exactly 1 result is stable, auto-click it
-5. Timeout after 5 seconds if results never stabilize
-
-```javascript
-// Integration Request link detection
-const INT_REQ_PATTERN = /^INT-REQ-\d{8,9}$/;
-
-function findIntegrationRequestLinks() {
-  const allLinks = document.querySelectorAll('a[data-refid="recordId"]');
-  return Array.from(allLinks).filter(link => 
-    INT_REQ_PATTERN.test(link.textContent.trim())
-  );
-}
-
-// Polling with stability
-function waitForSearchResultsAndAutoClick() {
-  let lastCount = -1;
-  let stableChecks = 0;
-  
-  function checkResults() {
-    const links = findIntegrationRequestLinks();
-    if (links.length === lastCount) stableChecks++;
-    else { stableChecks = 0; lastCount = links.length; }
-    
-    if (stableChecks >= 2 && links.length === 1) {
-      links[0].click(); // Auto-click!
-    }
-  }
-  // Poll every 300ms for up to 5 seconds
-}
-```
-
-### 5. Triggering Enter Key in Lightning Components
-
-**Challenge**: Keyboard events need specific properties for Lightning to recognize them.
-
-**Solution**: Include all possible key-related properties:
-
-```javascript
-const keydownEvent = new KeyboardEvent('keydown', {
-  key: 'Enter',
-  code: 'Enter',
-  keyCode: 13,      // Legacy but still needed
-  which: 13,        // Legacy but still needed
-  charCode: 13,     // Legacy but still needed
-  bubbles: true,
-  cancelable: true,
-  composed: true,   // Important for Shadow DOM
-  view: window
-});
-searchBox.dispatchEvent(keydownEvent);
-```
-
-### 5. Handling Multiple Searches (State Management)
-
-**Challenge**: When searching for a second SR, the previous search state interferes. The search dialog may already be open, or old SR numbers persist.
-
-**Solutions implemented**:
-
-1. **Close existing dialog before new search**:
-```javascript
-const existingDialog = document.querySelector('.forceSearchAssistantDialog');
-if (existingDialog) {
-  // Press Escape to close
-  document.dispatchEvent(new KeyboardEvent('keydown', {
-    key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true
-  }));
-  // Wait for close, then proceed
-  setTimeout(() => openSearchAndEnterText(searchText), 300);
-}
-```
-
-2. **Freshness-based SR validation**:
-```javascript
-let lastRightClickTime = 0;
-const RIGHT_CLICK_FRESHNESS = 5000; // 5 seconds
-
-// Only use SR if recently captured
-if (lastSRNumber && (Date.now() - lastRightClickTime) < RIGHT_CLICK_FRESHNESS) {
-  srNumber = lastSRNumber;
-}
-```
-
-3. **Duplicate search prevention**:
-```javascript
-let lastSearchTime = 0;
-let lastSearchSR = null;
-const SEARCH_COOLDOWN = 2000;
-
-// Prevent duplicate searches for same SR within cooldown
-if (lastSearchSR === srNumber && (now - lastSearchTime) < SEARCH_COOLDOWN) {
-  return; // Skip duplicate
-}
-```
-
-### 6. Avoiding Autocomplete Suggestions
-
-**Challenge**: When typing in search, Salesforce shows autocomplete suggestions. Clicking on these may lead to wrong results.
-
-**Solution**: Do NOT click on suggestions. Instead, trigger Enter key to perform a full search:
-
-```javascript
-// DON'T do this - leads to wrong results:
-// suggestion.click();
-
-// DO this - triggers full search:
-searchBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ... }));
-```
-
-### 7. Right-Click Detection Across Frames
-
-**Challenge**: Right-click happens in iframe, but context menu click event is received by all frames. Each frame needs to know if IT was the one that detected the SR.
-
-**Solution**: Track right-click timestamp per frame:
-
-```javascript
-document.addEventListener('contextmenu', (event) => {
-  lastRightClickTime = Date.now();  // Track when THIS frame got right-click
-  lastSRNumber = extractSRNumber(event.target);
-});
-
-// Later, only use SR if this frame recently received a right-click
-const timeSinceRightClick = Date.now() - lastRightClickTime;
-if (lastSRNumber && timeSinceRightClick < 5000) {
-  // This frame has fresh data
-}
-```
-
-### 8. Timing and Delays
-
-**Lesson learned**: Salesforce Lightning is asynchronous. Always use appropriate delays:
-
-| Operation | Recommended Delay |
-|-----------|-------------------|
-| After clicking search button | 100ms polling, up to 2 seconds |
-| After dialog closes | 300ms before opening new |
-| After setting input value | 200ms before dispatching Enter |
-| After Enter key | 300ms for search to start |
-
-### 9. URL Pattern Matching
-
-**Best practice** for Salesforce extensions:
-```json
-"matches": [
-  "https://*.salesforce.com/*",
-  "https://*.force.com/*",
-  "https://*.lightning.force.com/*"
-]
-```
-
-This covers production, sandbox, scratch orgs, and Lightning domains.
-
----
-
-## Search Query Format
-
-The extension searches for Integration Requests where the **Identifier** field contains:
-```
-Request|{SR_NUMBER}
-```
-
-For example, for SR `08475332`, it searches: `Request|08475332`
-
-## Supported Salesforce Domains
-
-The extension activates on:
-- `https://*.salesforce.com/*`
-- `https://*.force.com/*`
-- `https://*.lightning.force.com/*`
-
-## SR Number Detection
-
-The extension recognizes SR numbers by:
-1. Finding the closest `<a>` link element to the right-click
-2. Extracting the link text
-3. Validating it matches the pattern: 8-9 digits (`/^\d{8,9}$/`)
-
-### Dynamic Menu Behavior
-
-The context menu item is dynamically enabled/disabled based on validation:
+The context menu item is only enabled when clicking on valid SR numbers:
 
 | Condition | Menu State |
 |-----------|------------|
-| Not a link | **Disabled** |
-| Link, but text is not 8-9 digits | **Disabled** |
-| Link, text has letters | **Disabled** |
-| Link, text is 7 digits (e.g., "1234567") | **Disabled** |
-| Link, text is 10 digits (e.g., "1234567890") | **Disabled** |
-| Link, text is 8 digits (e.g., "08496105") | **Enabled** |
-| Link, text is 9 digits (e.g., "084961051") | **Enabled** |
+| Link with 8-9 digit text | **Enabled** |
+| Not a link | Disabled |
+| Link with letters or wrong digit count | Disabled |
+
+---
+
+## Feature 2: JSON Formatter & Validator
+
+### Purpose
+
+Integration Request pages contain JSON data in "HTTP Request Content" sections that is difficult to read in raw format. This feature:
+
+- **Auto-formats** JSON with proper indentation
+- **Validates** field values against business rules
+- **Highlights** invalid values in red with error messages
+
+### How to Use
+
+**Automatic:** The formatter runs automatically when you:
+- Open an Integration Request page
+- Switch tabs within an INT-REQ record
+
+**Manual:** Click the extension icon in the toolbar to trigger formatting.
+
+### Validation Display
+
+- **Green** text = Valid value
+- **Red bold** text = Invalid value (with error message shown at top)
+- **Black** text = No validation rule for this field
+
+---
+
+## Adding New Validation Rules
+
+The JSON Formatter includes a validation engine that can be extended with new rules. Rules are defined in `content-json-formatter.js` in the `validationRules` array.
+
+### Rule Types
+
+| Type | Use Case | Required Properties |
+|------|----------|---------------------|
+| `regex` | Simple pattern matching on field values | `fields`, `pattern`, `message` |
+| `conditional` | Cross-field validation with preconditions | `fields`, `condition`, `validate`, `message` |
+| `custom` | Complex custom logic | `fields`, `validate`, `message` |
+
+### Adding a Regex Rule
+
+Use for simple pattern validation on one or more fields:
+
+```javascript
+{
+    type: 'regex',
+    fields: ['fieldName1', 'fieldName2'],  // Fields to validate
+    pattern: /^[A-Z]{2}\d{4}$/,            // Regex pattern
+    message: 'Must be 2 letters followed by 4 digits'
+}
+```
+
+**Example - Validate postal code format:**
+```javascript
+{
+    type: 'regex',
+    fields: ['postalCode'],
+    pattern: /^[A-Z]\d[A-Z] \d[A-Z]\d$/,
+    message: 'Invalid Canadian postal code format (e.g., M5V 1J2)'
+}
+```
+
+### Adding a Conditional Rule
+
+Use when validation depends on another field's value:
+
+```javascript
+{
+    type: 'conditional',
+    condition: (obj) => obj.someField === 'SomeValue',  // When to apply
+    validate: (obj) => {                                 // Validation logic
+        // Return true if valid, false if invalid
+        return obj.targetField.length <= 50;
+    },
+    fields: ['targetField'],  // Fields to highlight if invalid
+    message: 'Error message when validation fails'
+}
+```
+
+**Example - Validate name length for specific division:**
+```javascript
+{
+    type: 'conditional',
+    condition: (obj) => obj.division === 'Toronto Water',
+    validate: (obj) => {
+        if (!obj.participants || !Array.isArray(obj.participants)) return true;
+        return obj.participants.every(p => !p.firstName || p.firstName.length <= 30);
+    },
+    fields: ['firstName'],
+    message: 'First name for Toronto Water must be 30 characters or less'
+}
+```
+
+### Adding a Custom Rule
+
+Use for complex validation that doesn't fit other types:
+
+```javascript
+{
+    type: 'custom',
+    validate: (obj) => {
+        // Custom validation logic
+        // Return true if valid, false if invalid
+        return someComplexValidation(obj);
+    },
+    fields: ['field1', 'field2'],  // Fields to highlight if invalid
+    message: 'Custom error message'
+}
+```
+
+**Example - Validate that emergency requests have high priority:**
+```javascript
+{
+    type: 'custom',
+    validate: (obj) => {
+        if (obj.requestType !== 'Emergency') return true;
+        return obj.priority === 'High';
+    },
+    fields: ['priority'],
+    message: 'Emergency requests must have High priority'
+}
+```
+
+### Current Validation Rules
+
+| Fields | Rule Type | Validation |
+|--------|-----------|------------|
+| `response`, `problemTypeDescription`, `additionalInformation` | regex | No `{}[]|\`~` characters |
+| `firstName`, `lastName` | regex | Valid name format |
+| `country`, `province`, `city`, `streetNumberAndSuffix` | regex | Valid location characters |
+| `primaryContactNumber`, `secondaryContactNumber`, `fax` | regex | Valid phone format |
+| `email` | regex | Valid email format |
+| `firstName` (Toronto Water) | conditional | Max 30 characters |
+| `lastName` (Toronto Water) | conditional | Max 50 characters |
 
 ---
 
@@ -337,105 +195,77 @@ The context menu item is dynamically enabled/disabled based on validation:
 4. Select this extension folder
 5. The extension icon appears in the toolbar
 
-## Usage
-
-1. Navigate to any Salesforce page with Service Requests (e.g., a report, list view, or related list)
-2. Locate a Service Request number in the "Request Number" column
-3. **Right-click** on the SR number link
-4. Select **"Search Integration Request"**
-5. In the search results, click the Integration Request to open it
+---
 
 ## Project Structure
 
 ```
 SR to Integration Request Finder/
-├── manifest.json      # Extension configuration
-├── background.js      # Service worker (context menu)
-├── content.js         # Content script (SR detection, search)
-├── README.md          # This file
-├── PLAN.md            # Development plan and architecture
-└── images/            # Extension icons
+├── manifest.json               # Extension configuration
+├── background.js               # Service worker (context menu + icon click)
+├── content.js                  # SR detection and search execution
+├── content-json-formatter.js   # JSON formatting and validation
+├── README.md                   # This file
+├── PLAN.md                     # Technical architecture details
+└── images/
     ├── sr_to_ir_finder_icon16.png
     ├── sr_to_ir_finder_icon32.png
     ├── sr_to_ir_finder_icon48.png
     └── sr_to_ir_finder_icon128.png
 ```
 
+### File Responsibilities
+
+| File | Purpose |
+|------|---------|
+| `manifest.json` | Extension configuration, permissions, content script registration |
+| `background.js` | Creates context menu, handles menu clicks, handles icon clicks |
+| `content.js` | Detects SR numbers, executes Salesforce search, auto-clicks results |
+| `content-json-formatter.js` | Formats JSON, validates fields, displays errors |
+
+---
+
+## Supported Salesforce Domains
+
+The extension activates on:
+- `https://*.salesforce.com/*`
+- `https://*.force.com/*`
+- `https://*.lightning.force.com/*`
+
 ---
 
 ## Troubleshooting
 
-### "Could not find Salesforce search box"
-- Ensure you are on a Salesforce Lightning page
-- The global search button must be visible at the top of the page
-- Try refreshing the page
+### SR to IR Finder Issues
 
-### Search doesn't work on second attempt
-- Wait at least 2 seconds between searches
-- If search dialog is stuck, press Escape and try again
+| Problem | Solution |
+|---------|----------|
+| "Could not find search box" | Ensure you're on a Salesforce Lightning page with visible search |
+| Menu item is grayed out | Right-click directly on an 8-9 digit SR number link |
+| Search doesn't work twice | Wait 2 seconds between searches |
+| Auto-click not working | Only triggers for exactly 1 result; check console for details |
 
-### SR number not detected
-- Make sure you're right-clicking directly on the SR number link
-- SR numbers must be 8-9 digits
-- Check the console (F12) for `[IR Finder]` messages
+### JSON Formatter Issues
 
-### Menu item is grayed out (disabled)
-- The element you right-clicked is not a link (`<a>` tag)
-- The link text is not a valid SR number (must be exactly 8-9 digits)
-- Check the console for `[IR Finder] Menu state updated:` messages
-
-### Extension not loading
-- Verify the URL matches `*.salesforce.com` or `*.force.com`
-- Check `chrome://extensions/` for errors
-- Try removing and re-adding the extension
-
-### Auto-click not working
-- Check console for `[IR Finder] Found X INT-REQ link(s)` messages
-- Auto-click only triggers when **exactly 1** result is found
-- Results must be stable (same count on 2 consecutive checks)
-- Maximum wait time is 5 seconds after search
-- If disabled, check `AUTO_CLICK_ENABLED` constant in content.js
-
-### Auto-click happening when it shouldn't
-- Auto-click only triggers for links matching `INT-REQ-NNNNNNNN` pattern
-- Check if multiple Integration Requests have similar identifiers
-
----
-
-## Development Notes
+| Problem | Solution |
+|---------|----------|
+| JSON not formatting | Click extension icon to manually trigger |
+| No sections found | Ensure you're on an INT-REQ page with "HTTP Request Content" section |
+| Already processed | Formatter skips sections that are already formatted |
 
 ### Debugging
-Enable verbose logging by checking the browser console for `[IR Finder]` prefixed messages:
-- `[IR Finder] Detected SR number:` - SR extraction working
-- `[IR Finder] Received search request from background` - Message passing working
-- `[IR Finder] In iframe, sending SR to top frame:` - Cross-frame communication working
-- `[IR Finder] Clicking search button to open dialog` - Search initiation
-- `[IR Finder] Starting auto-click watch for search results...` - Auto-click polling started
-- `[IR Finder] Found N INT-REQ link(s) at Xms` - Result detection progress
-- `[IR Finder] Single stable result found, auto-clicking` - Auto-click triggered
-- `[IR Finder] Multiple results found (N), user must choose` - User action required
-- `[IR Finder] Auto-click timeout reached` - 5 second timeout hit
 
-### Testing Checklist
-1. ✅ First search works
-2. ✅ Second search works (different SR)
-3. ✅ Same SR twice works (after cooldown)
-4. ✅ Works in iframes
-5. ✅ Works on different Salesforce pages
-6. ✅ Right-click on 8-digit SR link → Menu **enabled**
-7. ✅ Right-click on 9-digit SR link → Menu **enabled**
-8. ✅ Right-click on 7-digit number link → Menu **disabled**
-9. ✅ Right-click on non-link text → Menu **disabled**
-10. ✅ Single search result → Auto-clicks and opens Integration Request
-11. ✅ No search results → Does nothing (no error)
-12. ✅ Multiple search results → Does nothing (user chooses)
-13. ✅ Slow-loading results → Auto-click still works (within 5 seconds)
-14. ✅ Results never appear → Timeout after 5 seconds, no error
+Check the browser console (F12) for debug messages:
+- `[IR Finder]` - SR to IR Finder messages
+- `[JSONFormatter]` - JSON Formatter messages
 
 ---
 
 ## Version History
 
-- **v1.2** - Auto-click single result: automatically opens Integration Request when exactly one match found
-- **v1.1** - Dynamic context menu: menu item enabled/disabled based on SR number validation
-- **v1.0** - Initial release with context menu search functionality
+| Version | Changes |
+|---------|---------|
+| **1.1** | Added JSON Formatter & Validator (merged from separate extension) |
+| 1.0.2 | Auto-click single result feature |
+| 1.0.1 | Dynamic context menu enable/disable |
+| 1.0.0 | Initial release |
