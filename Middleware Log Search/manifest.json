@@ -22,6 +22,14 @@
       "js": ["jaeger-expand.js"],
       "run_at": "document_idle",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "*://portal.cc.toronto.ca/*"
+      ],
+      "js": ["error-trace-click.js"],
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
   "permissions": ["contextMenus", "activeTab", "tabs"],
