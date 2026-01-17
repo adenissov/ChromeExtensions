@@ -1,18 +1,32 @@
 # 311 Middleware Log Search
 
-A Chrome/Edge extension for City of Toronto 311 staff that provides two independent productivity features:
+A Chrome/Edge extension for City of Toronto 311 staff that provides three independent productivity features:
 
 1. **Kibana Log Search** - Right-click on Service Request numbers in Salesforce to search middleware logs
-2. **Jaeger Auto-Expand** - Automatically expands trace details in Jaeger to reveal response body content
+2. **Auto Error Trace Click** - Automatically opens the Jaeger trace for the first HTTP error found in the Middleware dashboard
+3. **Jaeger Auto-Expand** - Automatically expands trace details in Jaeger to reveal response body content
 
 ## Features Overview
 
-This extension contains **two independent parts** that work together but serve different purposes:
+This extension contains **three independent parts** that work together in sequence:
 
 | Feature | Trigger | Target System | Purpose |
 |---------|---------|---------------|---------|
 | Kibana Log Search | Right-click menu on SR numbers | Salesforce → Kibana | Search middleware logs for an SR |
-| Jaeger Auto-Expand | Automatic on page load | Jaeger UI | Reveal response.body in trace details |
+| Auto Error Trace Click | Automatic on Kibana page load | Kibana → Jaeger | Open trace for first HTTP error (≥300) |
+| Jaeger Auto-Expand | Automatic on Jaeger page load | Jaeger UI | Reveal response.body in trace details |
+
+### Complete Workflow
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   SALESFORCE    │───►│     KIBANA      │───►│     JAEGER      │
+│                 │    │  (Middleware)   │    │                 │
+│ Right-click SR  │    │ Auto-click      │    │ Auto-expand     │
+│ → Opens Kibana  │    │ first error     │    │ response.body   │
+│                 │    │ trace link      │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
 
 ---
 
@@ -52,7 +66,46 @@ The context menu feature activates on:
 
 ---
 
-## Part 2: Jaeger Auto-Expand
+## Part 2: Auto Error Trace Click (Middleware Dashboard)
+
+### Problem Statement
+
+After searching for an SR in Kibana, the results table shows multiple rows with different HTTP status codes. Users need to manually scan through rows looking for errors (status code ≥ 300) and click the trace link to investigate.
+
+**This extension automates error detection**: when the Kibana dashboard loads, it automatically finds and clicks the first error trace.
+
+### How It Works
+
+1. Kibana dashboard opens (from Part 1 or manually navigated)
+2. The extension waits for the data table (`table.osdDocTable`) to load
+3. Scans the **Status Code** column from **bottom to top** (most recent first)
+4. When an HTTP error (status code ≥ 300) is found, automatically clicks the **Trace** link in the same row
+5. Jaeger trace page opens in the same tab
+6. If no errors are found, does nothing silently
+
+### Configuration
+
+| Setting | Value |
+|---------|-------|
+| Target URL | `*://portal.cc.toronto.ca/*` (port 5601) |
+| Error Threshold | Status Code ≥ 300 |
+| Scan Direction | Bottom to top (most recent first) |
+| Observer Timeout | 10 seconds (max wait for table) |
+
+### Target Table Structure
+
+The extension targets OpenSearch Dashboards (OSD) tables with this structure:
+
+| Column | Selector |
+|--------|----------|
+| Status Code | `span[data-test-subj="docTableHeader-Status Code"]` |
+| Trace | `span[data-test-subj="docTableHeader-Trace"]` |
+| Cell values | `span[ng-non-bindable]` |
+| Trace link | `td a[href]` |
+
+---
+
+## Part 3: Jaeger Auto-Expand
 
 ### Problem Statement
 
@@ -67,7 +120,7 @@ Users frequently need to manually click through all these levels to see the `res
 
 ### How It Works
 
-1. Navigate to a Jaeger trace page
+1. Navigate to a Jaeger trace page (from Part 2 or manually)
 2. The extension automatically:
    - Expands the first span bar (green bar)
    - Expands the "Logs" accordion
@@ -78,8 +131,9 @@ Users frequently need to manually click through all these levels to see the `res
 
 - Uses **MutationObserver** to detect dynamically loaded content
 - Waits for virtualized content to render before expanding
-- Runs on all URLs (no server-specific filtering)
+- Runs on all URLs (filters internally by Jaeger-specific CSS classes)
 - Does nothing silently on non-Jaeger pages
+- 5-minute timeout to prevent memory leaks
 
 ---
 
@@ -95,13 +149,14 @@ Users frequently need to manually click through all these levels to see the `res
 
 ```
 Middleware Log Search/
-├── manifest.json       # Extension configuration
-├── background.js       # Service worker: context menu, Kibana URL opening
-├── content.js          # Salesforce content script: SR validation
-├── jaeger-expand.js    # Jaeger content script: auto-expand accordions
-├── README.md           # This file
-├── PLAN.md             # Development plan and architecture
-└── images/             # Extension icons
+├── manifest.json          # Extension configuration
+├── background.js          # Service worker: context menu, Kibana URL opening
+├── content.js             # Salesforce content script: SR validation
+├── error-trace-click.js   # Kibana content script: auto-click error trace
+├── jaeger-expand.js       # Jaeger content script: auto-expand accordions
+├── README.md              # This file (user documentation)
+├── PLAN.md                # Architecture and development plan
+└── images/                # Extension icons
     ├── sr_in_middlware_search16.png
     ├── sr_in_middlware_search32.png
     ├── sr_in_middlware_search48.png
@@ -112,7 +167,7 @@ Middleware Log Search/
 
 ## Troubleshooting
 
-### Context Menu Issues
+### Context Menu Issues (Salesforce)
 
 #### Menu item is grayed out (disabled)
 - Ensure you're right-clicking on a **link** (`<a>` tag), not plain text
@@ -126,6 +181,18 @@ Middleware Log Search/
 #### Menu item does nothing when clicked
 - The extension may have been reloaded while the page was open
 - **Solution**: Refresh the page to reconnect to the extension
+
+### Auto Error Trace Issues (Kibana)
+
+#### Trace link not clicked automatically
+- Check that the table has loaded with data rows
+- Ensure at least one row has Status Code ≥ 300
+- Check the console (F12) for `[ErrorTraceClick]` messages
+- The observer times out after 10 seconds
+
+#### Wrong trace clicked
+- The extension clicks the **first error from bottom** (most recent in time order)
+- Verify the Status Code column is visible in the table
 
 ### Jaeger Auto-Expand Issues
 
@@ -142,18 +209,27 @@ Middleware Log Search/
 
 ## Debugging
 
-Enable verbose logging by checking the browser console (F12) for messages prefixed with `[Middleware Log]`:
+Enable verbose logging by checking the browser console (F12):
 
-**Salesforce (content.js):**
-- `[Middleware Log] Valid SR number found:` - SR extraction working
-- `[Middleware Log] Element is not a link` - Click wasn't on a link
-- `[Middleware Log] Link text is not 8-9 digits:` - Invalid number format
+**Salesforce (content.js):** Filter by `[Middleware Log]`
+- `Valid SR number found:` - SR extraction working
+- `Element is not a link` - Click wasn't on a link
+- `Link text is not 8-9 digits:` - Invalid number format
 
-**Jaeger (jaeger-expand.js):**
-- `[Middleware Log] Setting up MutationObserver for Jaeger UI` - Observer started
-- `[Middleware Log] Expanding span bar` - Auto-expanding green bar
-- `[Middleware Log] Expanding Logs accordion` - Auto-expanding Logs section
-- `[Middleware Log] Expanding inner timestamp accordion` - Auto-expanding timestamp
+**Kibana (error-trace-click.js):** Filter by `[ErrorTraceClick]`
+- `Content script loaded, starting automatic scan` - Script initialized
+- `Table already present with N rows` - Table detected
+- `Column indices found. StatusCode: X, Trace: Y` - Columns located
+- `Scanning N rows bottom-to-top` - Scan started
+- `Found HTTP error: 400` - Error detected
+- `Clicking trace link:` - About to click
+- `No HTTP errors found in table` - No errors in current results
+
+**Jaeger (jaeger-expand.js):** Filter by `[Middleware Log]`
+- `Setting up MutationObserver for Jaeger UI` - Observer started
+- `Expanding span bar` - Auto-expanding green bar
+- `Expanding Logs accordion` - Auto-expanding Logs section
+- `Expanding inner timestamp accordion` - Auto-expanding timestamp
 
 ---
 
@@ -162,6 +238,7 @@ Enable verbose logging by checking the browser console (F12) for messages prefix
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | Jan 2026 | Initial release with Kibana search and Jaeger auto-expand |
+| 1.1 | Jan 2026 | Added auto error trace click for Kibana dashboard |
 
 ---
 
