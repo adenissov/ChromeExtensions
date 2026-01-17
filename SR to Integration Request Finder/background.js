@@ -1,5 +1,6 @@
 // 311 SR to Integration Request Finder - Background Service Worker
 // Creates context menu and handles menu clicks
+// Also handles icon click for JSON Formatter functionality
 
 //=============================================================================
 // CONTEXT MENU SETUP
@@ -14,6 +15,34 @@ chrome.runtime.onInstalled.addListener(() => {
     enabled: false      // Disabled by default until valid SR detected
   });
   console.log('[IR Finder] Context menu created (disabled by default)');
+});
+
+//=============================================================================
+// EXTENSION ICON CLICK HANDLER (JSON Formatter)
+//=============================================================================
+
+// Trigger JSON formatting when extension icon is clicked
+chrome.action.onClicked.addListener(async (tab) => {
+  console.log('[JSONFormatter] Icon clicked, triggering processing');
+  
+  // First, try to inject the content script in case it's not already loaded
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      files: ['content-json-formatter.js']
+    });
+  } catch (e) {
+    // Script may already be injected or page doesn't allow injection
+    console.log('[JSONFormatter] Script injection skipped:', e.message);
+  }
+  
+  // Send message to content script to trigger processing
+  // Use a small delay to ensure the script is ready
+  setTimeout(() => {
+    chrome.tabs.sendMessage(tab.id, { action: 'processNow' }).catch((error) => {
+      console.log('[JSONFormatter] Could not send message:', error.message);
+    });
+  }, 100);
 });
 
 //=============================================================================

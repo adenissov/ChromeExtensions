@@ -1,5 +1,6 @@
-// JSON Formatter v2.2 - Auto-Trigger on Tab Switch and Page Load
-// matches: "https://staff-cms.lightning.force.com/lightning/r/*"
+// JSON Formatter & Validator - Content Script
+// Auto-formats JSON and validates fields when viewing INT-REQ pages
+// Originally from "311 Integration Request Validator" extension, merged into IR Finder
 
 //=============================================================================
 // CONFIGURATION
@@ -25,6 +26,14 @@ var validationResultsMap = new Map();
 
 //=============================================================================
 // VALIDATION RULES CONFIGURATION
+//=============================================================================
+// To add new validation rules:
+// 1. For simple field pattern matching, add a 'regex' type rule
+// 2. For cross-field validation, add a 'conditional' type rule
+// 3. For complex custom logic, add a 'custom' type rule
+//
+// All rule types use the same 'fields' property to specify which fields
+// should be highlighted when validation fails.
 //=============================================================================
 const validationRules = [
 	{
@@ -570,7 +579,7 @@ function scheduleProcessing() {
 }
 
 //=============================================================================
-// MESSAGE LISTENER (for popup button manual trigger)
+// MESSAGE LISTENER (for icon click manual trigger)
 //=============================================================================
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -585,7 +594,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 //=============================================================================
 
 function init() {
-	console.log('[JSONFormatter] v2.2 - Initializing');
+	console.log('[JSONFormatter] Initializing (merged into IR Finder extension)');
 	
 	// Wait for Salesforce to finish initial render
 	setTimeout(() => {
@@ -596,7 +605,7 @@ function init() {
 		setupTabClickListeners();
 		setupMutationObserver();
 		
-		console.log('[JSONFormatter] v2.2 - Ready (auto-trigger enabled)');
+		console.log('[JSONFormatter] Ready (auto-trigger enabled)');
 	}, INITIAL_DELAY_MS);
 }
 
