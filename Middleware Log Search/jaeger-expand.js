@@ -9,6 +9,114 @@
   'use strict';
 
   let spanBarExpanded = false;
+  let responseBodyExtracted = false;
+  let extractionAttempts = 0;
+  const MAX_EXTRACTION_ATTEMPTS = 5;
+
+  //===========================================================================
+  // RESPONSE BODY EXTRACTION
+  //===========================================================================
+
+  /**
+   * Parse response body and extract error message if JSON
+   * @param {string} rawValue - The raw response body value
+   * @returns {string} The extracted error message or original value
+   */
+  function parseResponseBody(rawValue) {
+    if (!rawValue) return rawValue;
+
+    try {
+      const parsed = JSON.parse(rawValue);
+      // Check for errorInfo array with errorMessage
+      if (parsed.errorInfo && Array.isArray(parsed.errorInfo) && parsed.errorInfo.length > 0) {
+        const errorMessage = parsed.errorInfo[0].errorMessage;
+        if (errorMessage) {
+          console.log('[Middleware Log] Extracted errorMessage from JSON:', errorMessage);
+          return errorMessage;
+        }
+      }
+    } catch (e) {
+      // Not JSON, return as-is
+    }
+
+    return rawValue;
+  }
+
+  /**
+   * Extract response.body value from Jaeger KeyValueTable
+   * @returns {string|null} The response body value or null if not found
+   */
+  function extractResponseBody() {
+    // Find rows in KeyValueTable
+    const rows = document.querySelectorAll('.KeyValueTable--row, tr');
+
+    for (const row of rows) {
+      const keyCell = row.querySelector('.KeyValueTable--keyColumn, td:first-child');
+      if (keyCell && keyCell.textContent.trim() === 'response.body') {
+        // Value is in second <td>
+        const cells = row.querySelectorAll('td');
+        const valueCell = cells[1];
+        if (valueCell) {
+          let rawValue = null;
+          // First try to get the full JSON from json-markup div (handles formatted JSON)
+          const jsonMarkup = valueCell.querySelector('.json-markup');
+          if (jsonMarkup) {
+            rawValue = jsonMarkup.textContent.trim();
+          } else {
+            // Fallback: get text content of the cell
+            rawValue = valueCell.textContent.trim();
+          }
+          console.log('[Middleware Log] Raw response body:', rawValue);
+          return parseResponseBody(rawValue);
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Send extracted response body to background script
+   * @param {string} responseBody - The extracted response body
+   */
+  function sendResponseBodyToBackground(responseBody) {
+    if (!responseBody) return;
+
+    try {
+      chrome.runtime.sendMessage({
+        action: 'responseBodyExtracted',
+        responseBody: responseBody
+      });
+      console.log('[Middleware Log] Response body sent to background:', responseBody);
+    } catch (error) {
+      console.log('[Middleware Log] Failed to send response body:', error.message);
+    }
+  }
+
+  /**
+   * Attempt to extract response body with retry logic
+   */
+  function attemptExtraction() {
+    if (responseBodyExtracted) return;
+
+    extractionAttempts++;
+    console.log('[Middleware Log] Extracting response.body... (attempt', extractionAttempts + '/' + MAX_EXTRACTION_ATTEMPTS + ')');
+
+    const responseBody = extractResponseBody();
+    if (responseBody) {
+      responseBodyExtracted = true;
+      console.log('[Middleware Log] Response body found:', responseBody);
+      sendResponseBodyToBackground(responseBody);
+    } else if (extractionAttempts < MAX_EXTRACTION_ATTEMPTS) {
+      // Retry after delay
+      setTimeout(attemptExtraction, 500);
+    } else {
+      console.log('[Middleware Log] Response body not found after', MAX_EXTRACTION_ATTEMPTS, 'attempts');
+    }
+  }
+
+  //===========================================================================
+  // SPAN BAR EXPANSION
+  //===========================================================================
 
   /**
    * Expand the first span bar (green bar) if collapsed
@@ -48,14 +156,14 @@
   function expandLogsAccordions() {
     // Find all Logs accordion headers
     const logsHeaders = document.querySelectorAll('.AccordianLogs--header');
-    
+
     for (const header of logsHeaders) {
       // Expand Logs accordion if collapsed
       if (!header.classList.contains('is-open')) {
         console.log('[Middleware Log] Expanding Logs accordion');
         header.click();
       }
-      
+
       // Find and expand inner timestamp accordions (AccordianKeyValues--header inside AccordianLogs)
       const accordion = header.closest('.AccordianLogs');
       if (accordion) {
@@ -70,6 +178,9 @@
         }
       }
     }
+
+    // Attempt to extract response body after accordions expand
+    setTimeout(attemptExtraction, 300);
   }
 
   /**
@@ -89,24 +200,37 @@
         expandSpanBar();
       }
 
-      // Check if any AccordianLogs or detail-row appeared
-      const hasNewContent = mutations.some(mutation => {
+      // Check if any AccordianLogs, detail-row, or KeyValueTable appeared
+      let hasNewAccordion = false;
+      let hasKeyValueTable = false;
+
+      for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            if (node.classList?.contains('AccordianLogs') || 
+            if (node.classList?.contains('AccordianLogs') ||
                 node.querySelector?.('.AccordianLogs') ||
                 node.classList?.contains('detail-row') ||
                 node.querySelector?.('.detail-row')) {
-              return true;
+              hasNewAccordion = true;
+            }
+            if (node.classList?.contains('KeyValueTable') ||
+                node.querySelector?.('.KeyValueTable') ||
+                node.classList?.contains('KeyValueTable--row') ||
+                node.querySelector?.('.KeyValueTable--row')) {
+              hasKeyValueTable = true;
             }
           }
         }
-        return false;
-      });
+      }
 
-      if (hasNewContent) {
+      if (hasNewAccordion) {
         // Small delay to let the DOM settle
         setTimeout(expandLogsAccordions, 100);
+      }
+
+      if (hasKeyValueTable && !responseBodyExtracted) {
+        // KeyValueTable appeared, try to extract response body
+        setTimeout(attemptExtraction, 200);
       }
     });
 

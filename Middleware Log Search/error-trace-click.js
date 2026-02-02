@@ -92,15 +92,19 @@
   //===========================================================================
 
   /**
-   * Click the trace link in the given cell
+   * Open the trace link in a background tab
    * @param {HTMLTableCellElement} cell - The Trace cell
-   * @returns {boolean} - True if link was clicked
+   * @returns {boolean} - True if link was found and opened
    */
   function clickTraceLink(cell) {
     const link = cell.querySelector(CONFIG.traceLinkSelector);
-    if (link) {
-      console.log(LOG_PREFIX, 'Clicking trace link:', link.href);
-      link.click();
+    if (link && link.href) {
+      console.log(LOG_PREFIX, 'Opening trace link in background:', link.href);
+      // Send to background script to open in background tab
+      chrome.runtime.sendMessage({
+        action: 'openInBackground',
+        url: link.href
+      });
       return true;
     }
     console.log(LOG_PREFIX, 'No trace link found in cell');

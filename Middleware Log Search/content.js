@@ -7,6 +7,7 @@
 
 const SR_COLUMN_HEADER = 'Request Number';
 const SR_NUMBER_PATTERN = /^\d{8,9}$/;  // 8-9 digit numbers
+const ELEMENT_ID_ATTR = 'data-mwlog-id';
 
 //=============================================================================
 // STATE MANAGEMENT
@@ -14,6 +15,69 @@ const SR_NUMBER_PATTERN = /^\d{8,9}$/;  // 8-9 digit numbers
 
 let lastRightClickedElement = null;
 let lastSRNumber = null;
+let elementIdCounter = 0;
+
+//=============================================================================
+// MESSAGE LISTENER FOR SR DISPLAY UPDATES
+//=============================================================================
+
+// Inject CSS styles for multi-line display (only once)
+let styleInjected = false;
+function injectStyles() {
+  if (styleInjected) return;
+  styleInjected = true;
+
+  const style = document.createElement('style');
+  style.textContent = `
+    .mwlog-expanded-cell,
+    .mwlog-expanded-cell * {
+      white-space: pre-wrap !important;
+      overflow: visible !important;
+      height: auto !important;
+      max-height: none !important;
+      word-wrap: break-word !important;
+      text-overflow: clip !important;
+      line-clamp: unset !important;
+      -webkit-line-clamp: unset !important;
+    }
+    tr:has(.mwlog-expanded-cell) {
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+    }
+  `;
+  document.head.appendChild(style);
+  console.log('[Middleware Log] Styles injected');
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'updateSRDisplay') {
+    const element = document.querySelector(`[${ELEMENT_ID_ATTR}="${message.elementId}"]`);
+    if (element) {
+      const link = element.closest('a') || element;
+      link.textContent = `${message.srNumber} - ${message.responseBody}`;
+
+      // Inject styles if not already done
+      injectStyles();
+
+      // Add class to the cell for CSS targeting
+      const cell = link.closest('td');
+      if (cell) {
+        cell.classList.add('mwlog-expanded-cell');
+
+        // Also add class to parent row
+        const row = cell.closest('tr');
+        if (row) {
+          row.classList.add('mwlog-expanded-row');
+        }
+      }
+
+      console.log('[Middleware Log] SR display updated:', link.textContent);
+    } else {
+      console.log('[Middleware Log] Could not find element to update:', message.elementId);
+    }
+  }
+});
 
 //=============================================================================
 // COLUMN VALIDATION
@@ -108,15 +172,19 @@ function extractSRNumber(element) {
 
   // Get the link text
   const linkText = link.textContent.trim();
-  
+
+  // Extract value to validate: text before first space, or whole text if no space
+  const spaceIndex = linkText.indexOf(' ');
+  const valueToValidate = spaceIndex !== -1 ? linkText.substring(0, spaceIndex) : linkText;
+
   // Validate it's an 8-9 digit number
-  if (!SR_NUMBER_PATTERN.test(linkText)) {
-    console.log('[Middleware Log] Link text is not 8-9 digits:', linkText);
+  if (!SR_NUMBER_PATTERN.test(valueToValidate)) {
+    console.log('[Middleware Log] Value is not 8-9 digits:', valueToValidate);
     return null;
   }
 
-  console.log('[Middleware Log] Valid SR number found:', linkText);
-  return linkText;
+  console.log('[Middleware Log] Valid SR number found:', valueToValidate);
+  return valueToValidate;
 }
 
 //=============================================================================
@@ -159,16 +227,25 @@ document.addEventListener('contextmenu', (event) => {
   // Extract and validate SR number
   const srNumber = extractSRNumber(event.target);
   const isValid = srNumber !== null;
-  
+
+  let elementId = null;
   if (isValid) {
     lastSRNumber = srNumber;
+
+    // Mark the element with a unique ID for later update
+    const link = event.target.closest('a');
+    if (link) {
+      elementId = `mwlog-${Date.now()}-${elementIdCounter++}`;
+      link.setAttribute(ELEMENT_ID_ATTR, elementId);
+    }
   }
 
   // Send validation result to background script to enable/disable menu
   safeSendMessage({
     action: 'updateMenuState',
     isValid: isValid,
-    srNumber: lastSRNumber
+    srNumber: lastSRNumber,
+    elementId: elementId
   });
 });
 
