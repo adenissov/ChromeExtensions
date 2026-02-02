@@ -17,11 +17,23 @@ let lastValidSRNumber = null;
 let sourceTabId = null;
 let elementId = null;
 
+// Queue processing state (for "Search All")
+let searchQueue = [];
+let currentSearchIndex = -1;
+let isProcessingQueue = false;
+
+// Tab tracking for cleanup (queue mode only)
+let currentKibanaTabId = null;
+let currentJaegerTabId = null;
+
+// Stored items from last right-click (for "Search All")
+let pendingAllItems = [];
+
 //=============================================================================
 // CONTEXT MENU SETUP
 //=============================================================================
 
-// Create context menu item when extension is installed
+// Create context menu items when extension is installed
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'middlewareLogSearch',
@@ -29,7 +41,18 @@ chrome.runtime.onInstalled.addListener(() => {
     contexts: ['all'],
     enabled: false  // Disabled by default until valid SR detected
   });
-  console.log('[Middleware Log] Context menu created (disabled by default)');
+  chrome.contextMenus.create({
+    id: 'separator',
+    type: 'separator',
+    contexts: ['all']
+  });
+  chrome.contextMenus.create({
+    id: 'middlewareLogSearchAll',
+    title: 'Search All in Middleware Log',
+    contexts: ['all'],
+    enabled: false  // Disabled by default until in Request Number column
+  });
+  console.log('[Middleware Log] Context menus created (disabled by default)');
 });
 
 //=============================================================================
@@ -47,10 +70,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log('[Middleware Log] Stored source tab ID:', sourceTabId, 'element ID:', elementId);
     }
 
-    // Update context menu enabled state
+    // Always store source tab ID when in column (for "Search All")
+    if (message.isValidColumn) {
+      sourceTabId = sender.tab?.id;
+    }
+
+    // Update single-SR context menu enabled state
+    // Disable if queue is processing
     chrome.contextMenus.update('middlewareLogSearch', {
-      enabled: message.isValid
+      enabled: message.isValid && !isProcessingQueue
     });
+
+    // Update "Search All" context menu state
+    if (message.isValidColumn && message.allItems && message.allItems.length > 0) {
+      pendingAllItems = message.allItems;
+      chrome.contextMenus.update('middlewareLogSearchAll', {
+        enabled: !isProcessingQueue
+      });
+      console.log('[Middleware Log] Search All menu enabled with', pendingAllItems.length, 'items');
+    } else {
+      pendingAllItems = [];
+      chrome.contextMenus.update('middlewareLogSearchAll', { enabled: false });
+    }
+
     console.log('[Middleware Log] Menu state updated:', message.isValid ? 'enabled' : 'disabled',
                 message.isValid ? `(SR: ${message.srNumber})` : '');
   }
@@ -58,7 +100,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Handle request to open URL in background tab
   if (message.action === 'openInBackground') {
     console.log('[Middleware Log] Opening in background tab:', message.url);
-    chrome.tabs.create({ url: message.url, active: false });
+    chrome.tabs.create({ url: message.url, active: false }, (tab) => {
+      if (isProcessingQueue) {
+        currentJaegerTabId = tab.id;
+      }
+    });
   }
 
   // Handle no errors found in Kibana (no status code >= 300)
@@ -74,6 +120,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }).catch(error => {
         console.log('[Middleware Log] Failed to send waiting message:', error.message);
       });
+    }
+
+    // In queue mode: cleanup tabs and process next
+    if (isProcessingQueue) {
+      cleanupCurrentTabs();
+      processNextInQueue();
     }
   }
 
@@ -95,22 +147,110 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log('[Middleware Log] Missing data for update - sourceTabId:', sourceTabId,
                   'elementId:', elementId, 'responseBody:', !!message.responseBody);
     }
+
+    // In queue mode: cleanup tabs and process next
+    if (isProcessingQueue) {
+      cleanupCurrentTabs();
+      processNextInQueue();
+    }
   }
 });
+
+//=============================================================================
+// TAB CLEANUP (QUEUE MODE)
+//=============================================================================
+
+/**
+ * Close current Kibana and Jaeger tabs (used in queue mode)
+ */
+function cleanupCurrentTabs() {
+  if (currentJaegerTabId) {
+    chrome.tabs.remove(currentJaegerTabId).catch(() => {});
+    currentJaegerTabId = null;
+  }
+  if (currentKibanaTabId) {
+    chrome.tabs.remove(currentKibanaTabId).catch(() => {});
+    currentKibanaTabId = null;
+  }
+}
+
+//=============================================================================
+// QUEUE PROCESSING (SEARCH ALL)
+//=============================================================================
+
+/**
+ * Process the next item in the search queue
+ */
+function processNextInQueue() {
+  currentSearchIndex++;
+
+  if (currentSearchIndex >= searchQueue.length) {
+    // All done
+    console.log('[Middleware Log] Queue processing complete');
+    isProcessingQueue = false;
+    currentSearchIndex = -1;
+    searchQueue = [];
+    return;
+  }
+
+  const item = searchQueue[currentSearchIndex];
+  console.log('[Middleware Log] Processing', currentSearchIndex + 1, '/', searchQueue.length, '- SR:', item.srNumber);
+
+  // Update tracking variables for message routing
+  elementId = item.elementId;
+  lastValidSRNumber = item.srNumber;
+
+  // Update SR to "Searching..."
+  chrome.tabs.sendMessage(sourceTabId, {
+    action: 'updateSRDisplay',
+    elementId: item.elementId,
+    srNumber: item.srNumber,
+    responseBody: 'Searching in the Middleware log...'
+  }).catch(error => {
+    console.log('[Middleware Log] Failed to update SR display:', error.message);
+  });
+
+  // Open Kibana (with tab ID tracking)
+  const kibanaUrl = KIBANA_URL_TEMPLATE.replace('NNNNNNNN', item.srNumber);
+  chrome.tabs.create({ url: kibanaUrl, active: false }, (tab) => {
+    currentKibanaTabId = tab.id;
+
+    // Set timeout for this item (30 seconds)
+    const timeoutSrNumber = item.srNumber;
+    setTimeout(() => {
+      if (isProcessingQueue && currentSearchIndex < searchQueue.length) {
+        const currentItem = searchQueue[currentSearchIndex];
+        if (currentItem && currentItem.srNumber === timeoutSrNumber) {
+          console.log('[Middleware Log] Timeout for SR:', timeoutSrNumber);
+          // Update display to show timeout
+          chrome.tabs.sendMessage(sourceTabId, {
+            action: 'updateSRDisplay',
+            elementId: item.elementId,
+            srNumber: item.srNumber,
+            responseBody: 'Timeout - no response'
+          }).catch(() => {});
+          cleanupCurrentTabs();
+          processNextInQueue();
+        }
+      }
+    }, 30000);
+  });
+}
 
 //=============================================================================
 // MENU CLICK HANDLER
 //=============================================================================
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
+  // Handle single SR search
   if (info.menuItemId === 'middlewareLogSearch') {
     console.log('[Middleware Log] Menu clicked, SR number:', lastValidSRNumber);
-    
+
     if (lastValidSRNumber) {
       // Construct the Kibana URL with the SR number
       const kibanaUrl = KIBANA_URL_TEMPLATE.replace('NNNNNNNN', lastValidSRNumber);
 
-      // Immediately update Salesforce to show "Looking..." message
+      // Immediately update Salesforce to show "Searching..." message
       if (sourceTabId && elementId) {
         chrome.tabs.sendMessage(sourceTabId, {
           action: 'updateSRDisplay',
@@ -118,7 +258,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
           srNumber: lastValidSRNumber,
           responseBody: 'Searching in the Middleware log...'
         }).catch(error => {
-          console.log('[Middleware Log] Failed to send looking message:', error.message);
+          console.log('[Middleware Log] Failed to send searching message:', error.message);
         });
       }
 
@@ -128,5 +268,26 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     } else {
       console.error('[Middleware Log] No SR number available');
     }
+  }
+
+  // Handle "Search All" in column
+  if (info.menuItemId === 'middlewareLogSearchAll') {
+    if (isProcessingQueue) {
+      console.log('[Middleware Log] Already processing queue, ignoring click');
+      return;
+    }
+
+    if (pendingAllItems.length === 0) {
+      console.log('[Middleware Log] No items to process');
+      return;
+    }
+
+    // Initialize queue
+    searchQueue = [...pendingAllItems];
+    currentSearchIndex = -1;
+    isProcessingQueue = true;
+
+    console.log('[Middleware Log] Starting Search All with', searchQueue.length, 'items');
+    processNextInQueue();
   }
 });

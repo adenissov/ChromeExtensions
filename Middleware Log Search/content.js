@@ -188,6 +188,82 @@ function extractSRNumber(element) {
 }
 
 //=============================================================================
+// COLLECT ALL SR NUMBERS IN COLUMN
+//=============================================================================
+
+/**
+ * Collect all valid SR numbers from the Request Number column
+ * @param {HTMLElement} clickedElement - The element that was right-clicked
+ * @returns {Array} - Array of {srNumber, elementId} objects, bottom-to-top order
+ */
+function collectAllSRNumbers(clickedElement) {
+  console.log('[Middleware Log] collectAllSRNumbers called with:', clickedElement.tagName);
+
+  const cell = clickedElement.closest('td');
+  if (!cell) {
+    console.log('[Middleware Log] No td cell found');
+    return [];
+  }
+
+  const row = cell.closest('tr');
+  const table = cell.closest('table');
+  if (!row || !table) {
+    console.log('[Middleware Log] No row or table found. row:', !!row, 'table:', !!table);
+    return [];
+  }
+
+  // Get column index - only count td cells in current row
+  const cells = Array.from(row.querySelectorAll('td'));
+  const columnIndex = cells.indexOf(cell);
+  console.log('[Middleware Log] Column index:', columnIndex, 'of', cells.length, 'cells');
+  if (columnIndex === -1) {
+    console.log('[Middleware Log] Could not find cell in row');
+    return [];
+  }
+
+  // Get all data rows from tbody, or all rows except header
+  let allRows;
+  const tbody = table.querySelector('tbody');
+  if (tbody) {
+    allRows = Array.from(tbody.querySelectorAll('tr'));
+  } else {
+    // Skip header row
+    allRows = Array.from(table.querySelectorAll('tr')).slice(1);
+  }
+  console.log('[Middleware Log] Found', allRows.length, 'data rows');
+
+  // Process bottom-to-top
+  const items = [];
+  for (let i = allRows.length - 1; i >= 0; i--) {
+    const rowCells = allRows[i].querySelectorAll('td');
+    const targetCell = rowCells[columnIndex];
+    if (!targetCell) continue;
+
+    const link = targetCell.querySelector('a');
+    if (!link) continue;
+
+    // Extract SR number using existing logic
+    const linkText = link.textContent.trim();
+    const spaceIndex = linkText.indexOf(' ');
+    const valueToValidate = spaceIndex !== -1 ? linkText.substring(0, spaceIndex) : linkText;
+
+    if (!SR_NUMBER_PATTERN.test(valueToValidate)) continue;
+
+    // Mark element with unique ID
+    let existingId = link.getAttribute(ELEMENT_ID_ATTR);
+    if (!existingId) {
+      existingId = `mwlog-${Date.now()}-${elementIdCounter++}`;
+      link.setAttribute(ELEMENT_ID_ATTR, existingId);
+    }
+
+    items.push({ srNumber: valueToValidate, elementId: existingId });
+  }
+
+  console.log('[Middleware Log] Collected', items.length, 'SR numbers from column');
+  return items;
+}
+
+//=============================================================================
 // HELPER FUNCTIONS
 //=============================================================================
 
@@ -224,28 +300,41 @@ document.addEventListener('contextmenu', (event) => {
   lastRightClickedElement = event.target;
   lastSRNumber = null;
 
-  // Extract and validate SR number
+  // Extract and validate SR number (for single-SR menu)
   const srNumber = extractSRNumber(event.target);
-  const isValid = srNumber !== null;
+  const isValidSingleSR = srNumber !== null;
+
+  // Collect all SRs in column (for "Search All" menu)
+  // If clicking on a valid SR, try to collect all from that column
+  let allItems = [];
+  if (isValidSingleSR) {
+    allItems = collectAllSRNumbers(event.target);
+  }
 
   let elementId = null;
-  if (isValid) {
+  if (isValidSingleSR) {
     lastSRNumber = srNumber;
 
     // Mark the element with a unique ID for later update
     const link = event.target.closest('a');
     if (link) {
-      elementId = `mwlog-${Date.now()}-${elementIdCounter++}`;
-      link.setAttribute(ELEMENT_ID_ATTR, elementId);
+      // Check if already marked (by collectAllSRNumbers)
+      elementId = link.getAttribute(ELEMENT_ID_ATTR);
+      if (!elementId) {
+        elementId = `mwlog-${Date.now()}-${elementIdCounter++}`;
+        link.setAttribute(ELEMENT_ID_ATTR, elementId);
+      }
     }
   }
 
   // Send validation result to background script to enable/disable menu
   safeSendMessage({
     action: 'updateMenuState',
-    isValid: isValid,
+    isValid: isValidSingleSR,
     srNumber: lastSRNumber,
-    elementId: elementId
+    elementId: elementId,
+    isValidColumn: allItems.length > 0,
+    allItems: allItems
   });
 });
 
