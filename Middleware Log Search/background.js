@@ -61,6 +61,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.tabs.create({ url: message.url, active: false });
   }
 
+  // Handle no errors found in Kibana (no status code >= 300)
+  if (message.action === 'noErrorsFound') {
+    console.log('[Middleware Log] No errors found in Kibana, updating SR display');
+
+    if (sourceTabId && elementId) {
+      chrome.tabs.sendMessage(sourceTabId, {
+        action: 'updateSRDisplay',
+        elementId: elementId,
+        srNumber: lastValidSRNumber,
+        responseBody: 'Waiting for a BackEnd ID...'
+      }).catch(error => {
+        console.log('[Middleware Log] Failed to send waiting message:', error.message);
+      });
+    }
+  }
+
   // Handle response body extracted from Jaeger
   if (message.action === 'responseBodyExtracted') {
     console.log('[Middleware Log] Received response body:', message.responseBody);
@@ -93,6 +109,18 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (lastValidSRNumber) {
       // Construct the Kibana URL with the SR number
       const kibanaUrl = KIBANA_URL_TEMPLATE.replace('NNNNNNNN', lastValidSRNumber);
+
+      // Immediately update Salesforce to show "Looking..." message
+      if (sourceTabId && elementId) {
+        chrome.tabs.sendMessage(sourceTabId, {
+          action: 'updateSRDisplay',
+          elementId: elementId,
+          srNumber: lastValidSRNumber,
+          responseBody: 'Searching in the Middleware log...'
+        }).catch(error => {
+          console.log('[Middleware Log] Failed to send looking message:', error.message);
+        });
+      }
 
       // Open in new background tab (keep Salesforce tab on top)
       chrome.tabs.create({ url: kibanaUrl, active: false });

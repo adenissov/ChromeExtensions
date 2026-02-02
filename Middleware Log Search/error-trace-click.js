@@ -156,6 +156,10 @@
     }
 
     console.log(LOG_PREFIX, 'No HTTP errors found in table');
+    // Notify background script that no errors were found
+    chrome.runtime.sendMessage({
+      action: 'noErrorsFound'
+    });
     return false;
   }
 
