@@ -139,17 +139,6 @@
   }
 
   /**
-   * Check if the Jaeger page explicitly shows no trace records
-   * @returns {boolean} True only if explicit no-data indicator found
-   */
-  function hasNoRecords() {
-    // Only return true for explicit "no data" UI elements
-    // This is conservative to avoid false positives
-    const noTraceMessage = document.querySelector('.TraceTimelineViewer--noData, [data-testid="no-traces"]');
-    return !!noTraceMessage;
-  }
-
-  /**
    * Attempt to extract response body with retry logic
    */
   function attemptExtraction() {
@@ -256,13 +245,10 @@
     // After 10 seconds, if no data extracted, show "No records"
     setTimeout(() => {
       if (!responseBodyExtracted && !noRecordsMessageSent) {
-        // Force send if URL looks like a tracing page
-        const url = window.location.href.toLowerCase();
-        const looksLikeTracingPage = url.includes('jaeger') || url.includes('trace') ||
-                                      url.includes('tracing') || url.includes('16686');
-        if (looksLikeTracingPage || extractionAttempts > 0 || isJaegerPage()) {
+        // Only send if on a Jaeger page or extraction was attempted
+        if (isJaegerPage() || extractionAttempts > 0) {
           console.log('[Middleware Log] No records found after 10 second timeout');
-          sendNoRecordsMessage(true);  // Force send
+          sendNoRecordsMessage(true);
         }
       }
     }, 10000);

@@ -125,8 +125,11 @@
     if (!indices) return false;
 
     const rows = table.querySelectorAll(CONFIG.dataRowSelector);
+
+    // Handle empty table
     if (rows.length === 0) {
-      console.log(LOG_PREFIX, 'No data rows found');
+      console.log(LOG_PREFIX, 'Table is empty - no records');
+      chrome.runtime.sendMessage({ action: 'noRecordsFound' });
       return false;
     }
 
@@ -137,7 +140,7 @@
 
     for (const row of rowsArray) {
       const cells = row.querySelectorAll('td');
-      
+
       if (cells.length <= Math.max(indices.statusCodeIndex, indices.traceIndex)) {
         continue;  // Row doesn't have enough cells
       }
@@ -146,7 +149,7 @@
       const traceCell = cells[indices.traceIndex];
 
       const statusCode = parseStatusCode(statusCodeCell);
-      
+
       if (statusCode !== null && statusCode >= CONFIG.errorStatusThreshold) {
         console.log(LOG_PREFIX, 'Found HTTP error:', statusCode);
         if (clickTraceLink(traceCell)) {
@@ -155,18 +158,9 @@
       }
     }
 
-    // Check if table has any rows at all
-    if (rows.length === 0) {
-      console.log(LOG_PREFIX, 'Table is empty - no records');
-      chrome.runtime.sendMessage({
-        action: 'noRecordsFound'
-      });
-    } else {
-      console.log(LOG_PREFIX, 'No HTTP errors found in', rows.length, 'records');
-      chrome.runtime.sendMessage({
-        action: 'noErrorsFound'
-      });
-    }
+    // Table has rows but no errors found
+    console.log(LOG_PREFIX, 'No HTTP errors found in', rows.length, 'records');
+    chrome.runtime.sendMessage({ action: 'noErrorsFound' });
     return false;
   }
 

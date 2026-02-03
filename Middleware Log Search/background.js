@@ -30,6 +30,30 @@ let currentJaegerTabId = null;
 let pendingAllItems = [];
 
 //=============================================================================
+// HELPER FUNCTIONS
+//=============================================================================
+
+/**
+ * Send display update to Salesforce tab
+ * @param {string} responseBody - The message to display
+ */
+function updateSRDisplay(responseBody) {
+  if (!sourceTabId || !elementId) {
+    console.log('[Middleware Log] Cannot update display - missing sourceTabId or elementId');
+    return;
+  }
+
+  chrome.tabs.sendMessage(sourceTabId, {
+    action: 'updateSRDisplay',
+    elementId: elementId,
+    srNumber: lastValidSRNumber,
+    responseBody: responseBody
+  }).catch(error => {
+    console.log('[Middleware Log] Failed to update SR display:', error.message);
+  });
+}
+
+//=============================================================================
 // CONTEXT MENU SETUP
 //=============================================================================
 
@@ -109,20 +133,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Handle no errors found in Kibana (no status code >= 300)
   if (message.action === 'noErrorsFound') {
-    console.log('[Middleware Log] No errors found in Kibana, updating SR display');
+    console.log('[Middleware Log] No errors found in Kibana');
+    updateSRDisplay('Waiting for a BackEnd ID...');
 
-    if (sourceTabId && elementId) {
-      chrome.tabs.sendMessage(sourceTabId, {
-        action: 'updateSRDisplay',
-        elementId: elementId,
-        srNumber: lastValidSRNumber,
-        responseBody: 'Waiting for a BackEnd ID...'
-      }).catch(error => {
-        console.log('[Middleware Log] Failed to send waiting message:', error.message);
-      });
-    }
-
-    // In queue mode: cleanup tabs and process next
     if (isProcessingQueue) {
       cleanupCurrentTabs();
       processNextInQueue();
@@ -132,19 +145,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Handle no records found in Kibana (empty table)
   if (message.action === 'noRecordsFound') {
     console.log('[Middleware Log] No records found in Kibana');
+    updateSRDisplay('No records in Middleware log');
 
-    if (sourceTabId && elementId) {
-      chrome.tabs.sendMessage(sourceTabId, {
-        action: 'updateSRDisplay',
-        elementId: elementId,
-        srNumber: lastValidSRNumber,
-        responseBody: 'No records in Middleware log'
-      }).catch(error => {
-        console.log('[Middleware Log] Failed to send no records message:', error.message);
-      });
-    }
-
-    // In queue mode: cleanup tabs and process next
     if (isProcessingQueue) {
       cleanupCurrentTabs();
       processNextInQueue();
@@ -155,22 +157,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'responseBodyExtracted') {
     console.log('[Middleware Log] Received response body:', message.responseBody);
 
-    if (sourceTabId && elementId && message.responseBody) {
-      console.log('[Middleware Log] Forwarding to tab', sourceTabId);
-      chrome.tabs.sendMessage(sourceTabId, {
-        action: 'updateSRDisplay',
-        elementId: elementId,
-        srNumber: lastValidSRNumber,
-        responseBody: message.responseBody
-      }).catch(error => {
-        console.log('[Middleware Log] Failed to send to source tab:', error.message);
-      });
+    if (message.responseBody) {
+      updateSRDisplay(message.responseBody);
     } else {
-      console.log('[Middleware Log] Missing data for update - sourceTabId:', sourceTabId,
-                  'elementId:', elementId, 'responseBody:', !!message.responseBody);
+      console.log('[Middleware Log] Missing response body');
     }
 
-    // In queue mode: cleanup tabs and process next
     if (isProcessingQueue) {
       cleanupCurrentTabs();
       processNextInQueue();
