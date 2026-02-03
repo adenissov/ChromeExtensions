@@ -11,6 +11,7 @@
   let spanBarExpanded = false;
   let responseBodyExtracted = false;
   let extractionAttempts = 0;
+  let noRecordsMessageSent = false;
   const MAX_EXTRACTION_ATTEMPTS = 5;
 
   //===========================================================================
@@ -93,10 +94,48 @@
   }
 
   /**
+   * Send "no records" message to background script
+   */
+  function sendNoRecordsMessage() {
+    if (noRecordsMessageSent || responseBodyExtracted) return;
+    noRecordsMessageSent = true;
+
+    try {
+      chrome.runtime.sendMessage({
+        action: 'responseBodyExtracted',
+        responseBody: 'No records in Middleware log'
+      });
+      console.log('[Middleware Log] No records message sent to background');
+    } catch (error) {
+      console.log('[Middleware Log] Failed to send no records message:', error.message);
+    }
+  }
+
+  /**
+   * Check if the Jaeger page has no trace records
+   * @returns {boolean} True if no records detected
+   */
+  function hasNoRecords() {
+    // Check for "No trace found" or similar empty state messages
+    const noTraceMessage = document.querySelector('.TraceTimelineViewer--noData, .no-data, [data-testid="no-traces"]');
+    if (noTraceMessage) return true;
+
+    // Check if there are no span rows at all (empty trace)
+    const spanRows = document.querySelectorAll('.span-row, .SpanBarRow');
+    if (spanRows.length === 0) {
+      // Also check if the trace timeline viewer is present but empty
+      const timelineViewer = document.querySelector('.TraceTimelineViewer, .trace-page-timeline');
+      if (timelineViewer) return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Attempt to extract response body with retry logic
    */
   function attemptExtraction() {
-    if (responseBodyExtracted) return;
+    if (responseBodyExtracted || noRecordsMessageSent) return;
 
     extractionAttempts++;
     console.log('[Middleware Log] Extracting response.body... (attempt', extractionAttempts + '/' + MAX_EXTRACTION_ATTEMPTS + ')');
@@ -111,6 +150,8 @@
       setTimeout(attemptExtraction, 500);
     } else {
       console.log('[Middleware Log] Response body not found after', MAX_EXTRACTION_ATTEMPTS, 'attempts');
+      // Send "no records" message instead of letting it timeout
+      sendNoRecordsMessage();
     }
   }
 
@@ -193,6 +234,16 @@
     setTimeout(() => {
       expandSpanBar();
     }, 500);
+
+    // Check for no records after page has had time to load
+    setTimeout(() => {
+      if (!responseBodyExtracted && !noRecordsMessageSent) {
+        if (hasNoRecords()) {
+          console.log('[Middleware Log] No records detected on Jaeger page');
+          sendNoRecordsMessage();
+        }
+      }
+    }, 2000);
 
     const observer = new MutationObserver((mutations) => {
       // Try to expand span bar if not yet done
