@@ -45,6 +45,19 @@ function injectStyles() {
       max-height: none !important;
       overflow: visible !important;
     }
+    /* Allow table and its containers to grow */
+    table:has(.mwlog-expanded-cell),
+    table:has(.mwlog-expanded-cell) tbody {
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+    }
+    .mwlog-expanded-table-container {
+      height: auto !important;
+      max-height: none !important;
+      min-height: unset !important;
+      overflow: visible !important;
+    }
   `;
   document.head.appendChild(style);
   console.log('[Middleware Log] Styles injected');
@@ -69,6 +82,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const row = cell.closest('tr');
         if (row) {
           row.classList.add('mwlog-expanded-row');
+        }
+
+        // Trigger table reflow to fix Salesforce layout issues
+        const table = cell.closest('table');
+        if (table) {
+          triggerSalesforceTableReflow(table);
         }
       }
 
@@ -266,6 +285,27 @@ function collectAllSRNumbers(clickedElement) {
 //=============================================================================
 // HELPER FUNCTIONS
 //=============================================================================
+
+/**
+ * Trigger Salesforce table reflow after content update.
+ * Adds classes to parent containers to allow them to grow with expanded content.
+ */
+function triggerSalesforceTableReflow(tableElement) {
+  if (!tableElement) return;
+
+  // Add class to parent containers to override their fixed heights
+  // Go up several levels to catch Salesforce's wrapper divs
+  let parent = tableElement.parentElement;
+  for (let i = 0; i < 5 && parent; i++) {
+    parent.classList.add('mwlog-expanded-table-container');
+    parent = parent.parentElement;
+  }
+
+  // Dispatch window resize event as well
+  requestAnimationFrame(() => {
+    window.dispatchEvent(new Event('resize'));
+  });
+}
 
 /**
  * Safely send message to background script
