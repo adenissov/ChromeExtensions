@@ -58,6 +58,15 @@ function injectStyles() {
       min-height: unset !important;
       overflow: visible !important;
     }
+    /* Searching animation - spinning icon */
+    .mwlog-spinner {
+      display: inline-block;
+      animation: mwlog-spin 1s linear infinite;
+    }
+    @keyframes mwlog-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
   `;
   document.head.appendChild(style);
   console.log('[Middleware Log] Styles injected');
@@ -68,10 +77,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const element = document.querySelector(`[${ELEMENT_ID_ATTR}="${message.elementId}"]`);
     if (element) {
       const link = element.closest('a') || element;
-      link.textContent = `${message.srNumber} - ${message.responseBody}`;
 
       // Inject styles if not already done
       injectStyles();
+
+      // Check if this is a searching message (spinner only for "Searching", not "Waiting")
+      const isSearching = message.responseBody.includes('Searching');
+
+      if (isSearching) {
+        // Build content with spinner before "Searching" or "Waiting"
+        link.innerHTML = '';
+        link.appendChild(document.createTextNode(`${message.srNumber} - `));
+
+        const spinner = document.createElement('span');
+        spinner.className = 'mwlog-spinner';
+        spinner.textContent = '⟳ ';
+        link.appendChild(spinner);
+
+        link.appendChild(document.createTextNode(message.responseBody));
+      } else {
+        link.textContent = `${message.srNumber} - ${message.responseBody}`;
+      }
 
       // Add class to the cell for CSS targeting
       const cell = link.closest('td');

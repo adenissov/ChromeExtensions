@@ -155,11 +155,18 @@
       }
     }
 
-    console.log(LOG_PREFIX, 'No HTTP errors found in table');
-    // Notify background script that no errors were found
-    chrome.runtime.sendMessage({
-      action: 'noErrorsFound'
-    });
+    // Check if table has any rows at all
+    if (rows.length === 0) {
+      console.log(LOG_PREFIX, 'Table is empty - no records');
+      chrome.runtime.sendMessage({
+        action: 'noRecordsFound'
+      });
+    } else {
+      console.log(LOG_PREFIX, 'No HTTP errors found in', rows.length, 'records');
+      chrome.runtime.sendMessage({
+        action: 'noErrorsFound'
+      });
+    }
     return false;
   }
 

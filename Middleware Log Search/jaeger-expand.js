@@ -8,11 +8,34 @@
 (function() {
   'use strict';
 
+  // Only run in the top frame to avoid duplicates
+  if (window !== window.top) {
+    return;
+  }
+
   let spanBarExpanded = false;
   let responseBodyExtracted = false;
   let extractionAttempts = 0;
   let noRecordsMessageSent = false;
   const MAX_EXTRACTION_ATTEMPTS = 5;
+
+  /**
+   * Check if current page is a Jaeger trace page
+   * @returns {boolean} True if on a Jaeger page
+   */
+  function isJaegerPage() {
+    const url = window.location.href.toLowerCase();
+    // Check URL for Jaeger/tracing indicators
+    if (url.includes('jaeger') || url.includes('/trace/') || url.includes('tracing') ||
+        url.includes('16686') || url.includes('zipkin')) {
+      return true;
+    }
+    // Check for Jaeger-specific DOM elements
+    if (document.querySelector('.TraceTimelineViewer, .TracePage, .TracePageHeader, .span-row, .SpanBar')) {
+      return true;
+    }
+    return false;
+  }
 
   //===========================================================================
   // RESPONSE BODY EXTRACTION
@@ -95,9 +118,13 @@
 
   /**
    * Send "no records" message to background script
+   * @param {boolean} force - If true, skip the Jaeger page check
    */
-  function sendNoRecordsMessage() {
+  function sendNoRecordsMessage(force = false) {
     if (noRecordsMessageSent || responseBodyExtracted) return;
+    // Only send if forced, or on a Jaeger page, or extraction was attempted
+    if (!force && !isJaegerPage() && extractionAttempts === 0) return;
+
     noRecordsMessageSent = true;
 
     try {
@@ -112,23 +139,14 @@
   }
 
   /**
-   * Check if the Jaeger page has no trace records
-   * @returns {boolean} True if no records detected
+   * Check if the Jaeger page explicitly shows no trace records
+   * @returns {boolean} True only if explicit no-data indicator found
    */
   function hasNoRecords() {
-    // Check for "No trace found" or similar empty state messages
-    const noTraceMessage = document.querySelector('.TraceTimelineViewer--noData, .no-data, [data-testid="no-traces"]');
-    if (noTraceMessage) return true;
-
-    // Check if there are no span rows at all (empty trace)
-    const spanRows = document.querySelectorAll('.span-row, .SpanBarRow');
-    if (spanRows.length === 0) {
-      // Also check if the trace timeline viewer is present but empty
-      const timelineViewer = document.querySelector('.TraceTimelineViewer, .trace-page-timeline');
-      if (timelineViewer) return true;
-    }
-
-    return false;
+    // Only return true for explicit "no data" UI elements
+    // This is conservative to avoid false positives
+    const noTraceMessage = document.querySelector('.TraceTimelineViewer--noData, [data-testid="no-traces"]');
+    return !!noTraceMessage;
   }
 
   /**
@@ -150,8 +168,8 @@
       setTimeout(attemptExtraction, 500);
     } else {
       console.log('[Middleware Log] Response body not found after', MAX_EXTRACTION_ATTEMPTS, 'attempts');
-      // Send "no records" message instead of letting it timeout
-      sendNoRecordsMessage();
+      // Don't automatically send "No records" - let the timeout in background.js handle it
+      // Only send "No records" when hasNoRecords() explicitly detects empty state
     }
   }
 
@@ -235,15 +253,19 @@
       expandSpanBar();
     }, 500);
 
-    // Check for no records after page has had time to load
+    // After 10 seconds, if no data extracted, show "No records"
     setTimeout(() => {
       if (!responseBodyExtracted && !noRecordsMessageSent) {
-        if (hasNoRecords()) {
-          console.log('[Middleware Log] No records detected on Jaeger page');
-          sendNoRecordsMessage();
+        // Force send if URL looks like a tracing page
+        const url = window.location.href.toLowerCase();
+        const looksLikeTracingPage = url.includes('jaeger') || url.includes('trace') ||
+                                      url.includes('tracing') || url.includes('16686');
+        if (looksLikeTracingPage || extractionAttempts > 0 || isJaegerPage()) {
+          console.log('[Middleware Log] No records found after 10 second timeout');
+          sendNoRecordsMessage(true);  // Force send
         }
       }
-    }, 2000);
+    }, 10000);
 
     const observer = new MutationObserver((mutations) => {
       // Try to expand span bar if not yet done

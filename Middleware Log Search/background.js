@@ -37,7 +37,7 @@ let pendingAllItems = [];
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'middlewareLogSearch',
-    title: 'Search in Middleware Log',
+    title: 'Search this SR in Middleware Log',
     contexts: ['all'],
     enabled: false  // Disabled by default until valid SR detected
   });
@@ -48,7 +48,7 @@ chrome.runtime.onInstalled.addListener(() => {
   });
   chrome.contextMenus.create({
     id: 'middlewareLogSearchAll',
-    title: 'Search All in Middleware Log',
+    title: 'Search All SRs in Middleware Log',
     contexts: ['all'],
     enabled: false  // Disabled by default until in Request Number column
   });
@@ -119,6 +119,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         responseBody: 'Waiting for a BackEnd ID...'
       }).catch(error => {
         console.log('[Middleware Log] Failed to send waiting message:', error.message);
+      });
+    }
+
+    // In queue mode: cleanup tabs and process next
+    if (isProcessingQueue) {
+      cleanupCurrentTabs();
+      processNextInQueue();
+    }
+  }
+
+  // Handle no records found in Kibana (empty table)
+  if (message.action === 'noRecordsFound') {
+    console.log('[Middleware Log] No records found in Kibana');
+
+    if (sourceTabId && elementId) {
+      chrome.tabs.sendMessage(sourceTabId, {
+        action: 'updateSRDisplay',
+        elementId: elementId,
+        srNumber: lastValidSRNumber,
+        responseBody: 'No records in Middleware log'
+      }).catch(error => {
+        console.log('[Middleware Log] Failed to send no records message:', error.message);
       });
     }
 
@@ -215,7 +237,7 @@ function processNextInQueue() {
   chrome.tabs.create({ url: kibanaUrl, active: false }, (tab) => {
     currentKibanaTabId = tab.id;
 
-    // Set timeout for this item (30 seconds)
+    // Set timeout for this item (12 seconds - fallback after 10-second Jaeger timeout)
     const timeoutSrNumber = item.srNumber;
     setTimeout(() => {
       if (isProcessingQueue && currentSearchIndex < searchQueue.length) {
@@ -227,13 +249,13 @@ function processNextInQueue() {
             action: 'updateSRDisplay',
             elementId: item.elementId,
             srNumber: item.srNumber,
-            responseBody: 'Timeout - no response'
+            responseBody: 'No records in Middleware log'
           }).catch(() => {});
           cleanupCurrentTabs();
           processNextInQueue();
         }
       }
-    }, 30000);
+    }, 12000);
   });
 }
 
