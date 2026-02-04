@@ -17,6 +17,7 @@ const AUTO_CLICK_MAX_WAIT_MS = 5000;          // Max time to wait for results
 const AUTO_CLICK_POLL_INTERVAL_MS = 300;      // How often to check for results
 const AUTO_CLICK_STABLE_COUNT = 2;            // # of consistent checks before acting
 const INT_REQ_PATTERN = /^INT-REQ-\d{8,9}$/;  // Pattern for valid INT-REQ names
+const SR_NUMBER_PATTERN = /^\d{8,9}$/;        // 8-9 digit numbers
 
 // Only run search logic in the top frame (where the search box is)
 const IS_TOP_FRAME = (window === window.top);
@@ -46,16 +47,19 @@ document.addEventListener('contextmenu', (event) => {
   const link = event.target.closest('a');
   const isLink = link !== null;
   
-  // Extract and validate SR number (8-9 digits)
+  // Extract and validate SR number (8-9 digits, optionally followed by space + text)
   let isValidSR = false;
   if (isLink) {
     const linkText = link.textContent.trim();
-    isValidSR = /^\d{8,9}$/.test(linkText);
+    // Extract value before first space (consistent with Middleware Log Search)
+    const spaceIndex = linkText.indexOf(' ');
+    const valueToValidate = spaceIndex !== -1 ? linkText.substring(0, spaceIndex) : linkText;
+    isValidSR = SR_NUMBER_PATTERN.test(valueToValidate);
     if (isValidSR) {
-      lastSRNumber = linkText;
-      console.log('[IR Finder] Valid SR number detected:', linkText);
+      lastSRNumber = valueToValidate;
+      console.log('[IR Finder] Valid SR number detected:', valueToValidate);
     } else {
-      console.log('[IR Finder] Link text is not a valid SR number:', linkText);
+      console.log('[IR Finder] Link text is not a valid SR number:', valueToValidate);
     }
   } else {
     console.log('[IR Finder] Clicked element is not a link');
@@ -83,8 +87,10 @@ function extractSRNumber(element) {
   if (!link) {
     // If not a link, check if it's selected text that looks like an SR number
     const selectedText = window.getSelection().toString().trim();
-    if (selectedText && /^\d{8,9}$/.test(selectedText)) {
-      return selectedText;
+    const spaceIndex = selectedText.indexOf(' ');
+    const valueToValidate = spaceIndex !== -1 ? selectedText.substring(0, spaceIndex) : selectedText;
+    if (selectedText && SR_NUMBER_PATTERN.test(valueToValidate)) {
+      return valueToValidate;
     }
     return null;
   }
@@ -92,19 +98,23 @@ function extractSRNumber(element) {
   // Get the link text (SR number)
   const linkText = link.textContent.trim();
 
+  // Extract value before first space (consistent with Middleware Log Search)
+  const spaceIndex = linkText.indexOf(' ');
+  const valueToValidate = spaceIndex !== -1 ? linkText.substring(0, spaceIndex) : linkText;
+
   // Validate it looks like an SR number (8-9 digits)
-  if (!/^\d{8,9}$/.test(linkText)) {
+  if (!SR_NUMBER_PATTERN.test(valueToValidate)) {
     return null;
   }
 
   // Check if this link is in a "Request Number" column
   if (isInRequestNumberColumn(link)) {
-    return linkText;
+    return valueToValidate;
   }
 
   // Even if not in the right column, if it looks like an SR number, use it
   // This provides flexibility for different page layouts
-  return linkText;
+  return valueToValidate;
 }
 
 /**
@@ -565,8 +575,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // If we have selected text from the message, try that
     if (!srNumber && message.linkText) {
       const text = message.linkText.trim();
-      if (/^\d{8,9}$/.test(text)) {
-        srNumber = text;
+      const spaceIndex = text.indexOf(' ');
+      const valueToValidate = spaceIndex !== -1 ? text.substring(0, spaceIndex) : text;
+      if (SR_NUMBER_PATTERN.test(valueToValidate)) {
+        srNumber = valueToValidate;
         console.log('[IR Finder] Using SR from message linkText:', srNumber);
       }
     }
