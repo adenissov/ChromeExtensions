@@ -280,7 +280,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       chrome.tabs.create({ url: kibanaUrl, active: false });
       console.log('[Middleware Log] Opening Kibana URL for SR:', lastValidSRNumber);
     } else {
-      console.error('[Middleware Log] No SR number available');
+      console.log('[Middleware Log] No SR number available');
     }
   }
 
