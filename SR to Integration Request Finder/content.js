@@ -8,7 +8,6 @@ console.log('[IR Finder] *** CONTENT SCRIPT STARTING ***', window.location.href)
 // CONFIGURATION
 //=============================================================================
 
-const SR_COLUMN_HEADER = 'Request Number';  // Column header to detect
 const SEARCH_PREFIX = 'Request|';            // Prefix for search query
 
 // Auto-click configuration
@@ -26,9 +25,50 @@ const IS_TOP_FRAME = (window === window.top);
 // STATE
 //=============================================================================
 
-let lastRightClickedElement = null;
 let lastSRNumber = null;
 let lastRightClickTime = 0;  // Track when the right-click happened
+
+//=============================================================================
+// SR NUMBER PARSING
+//=============================================================================
+
+/**
+ * Parse and validate SR number from text.
+ * Extracts value before first space and validates as 8-9 digit number.
+ * @param {string} text - Raw text to parse
+ * @returns {string|null} - Valid SR number or null
+ */
+function parseSRNumber(text) {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  // Extract value before first space (consistent with Middleware Log Search)
+  const spaceIndex = trimmed.indexOf(' ');
+  const valueToValidate = spaceIndex !== -1 ? trimmed.substring(0, spaceIndex) : trimmed;
+
+  const isValid = SR_NUMBER_PATTERN.test(valueToValidate);
+  console.log('[IR Finder] parseSRNumber:', { input: text, trimmed, spaceIndex, valueToValidate, isValid });
+
+  return isValid ? valueToValidate : null;
+}
+
+/**
+ * Extract SR number from a DOM element.
+ * Checks link text first, then selected text as fallback.
+ * @param {HTMLElement} element - The element to extract from
+ * @returns {string|null} - Valid SR number or null
+ */
+function extractSRNumber(element) {
+  // Check link text first
+  const link = element.closest('a');
+  if (link) {
+    return parseSRNumber(link.textContent);
+  }
+
+  // Fallback: check selected text
+  return parseSRNumber(window.getSelection().toString());
+}
 
 //=============================================================================
 // RIGHT-CLICK DETECTION
@@ -39,132 +79,37 @@ let lastRightClickTime = 0;  // Track when the right-click happened
  * Also sends validation result to background script to enable/disable menu
  */
 document.addEventListener('contextmenu', (event) => {
-  lastRightClickedElement = event.target;
   lastSRNumber = null;
   lastRightClickTime = Date.now();
 
   // Check if clicked element is a link
   const link = event.target.closest('a');
   const isLink = link !== null;
-  
-  // Extract and validate SR number (8-9 digits, optionally followed by space + text)
-  let isValidSR = false;
-  if (isLink) {
-    const linkText = link.textContent.trim();
-    // Extract value before first space (consistent with Middleware Log Search)
-    const spaceIndex = linkText.indexOf(' ');
-    const valueToValidate = spaceIndex !== -1 ? linkText.substring(0, spaceIndex) : linkText;
-    isValidSR = SR_NUMBER_PATTERN.test(valueToValidate);
-    if (isValidSR) {
-      lastSRNumber = valueToValidate;
-      console.log('[IR Finder] Valid SR number detected:', valueToValidate);
-    } else {
-      console.log('[IR Finder] Link text is not a valid SR number:', valueToValidate);
-    }
+
+  // Extract and validate SR number
+  const srNumber = isLink ? parseSRNumber(link.textContent) : null;
+  const isValidSR = srNumber !== null;
+
+  if (isValidSR) {
+    lastSRNumber = srNumber;
+    console.log('[IR Finder] Valid SR number detected:', srNumber);
+  } else if (isLink) {
+    console.log('[IR Finder] Link text is not a valid SR number:', link.textContent.trim());
   } else {
     console.log('[IR Finder] Clicked element is not a link');
   }
-  
+
   // Send validation result to background script to enable/disable menu
   chrome.runtime.sendMessage({
     action: 'updateMenuState',
-    isValid: isLink && isValidSR,
+    isValid: isValidSR,
     isLink: isLink,
-    srNumber: isValidSR ? lastSRNumber : null
+    srNumber: srNumber
   }).catch(err => {
     // Ignore errors (e.g., if background script not ready)
     console.log('[IR Finder] Could not send menu state update:', err.message);
   });
 });
-
-/**
- * Extract SR number from clicked element
- * Checks if the element is in a "Request Number" column
- */
-function extractSRNumber(element) {
-  // Find the closest link element
-  const link = element.closest('a');
-  if (!link) {
-    // If not a link, check if it's selected text that looks like an SR number
-    const selectedText = window.getSelection().toString().trim();
-    const spaceIndex = selectedText.indexOf(' ');
-    const valueToValidate = spaceIndex !== -1 ? selectedText.substring(0, spaceIndex) : selectedText;
-    if (selectedText && SR_NUMBER_PATTERN.test(valueToValidate)) {
-      return valueToValidate;
-    }
-    return null;
-  }
-
-  // Get the link text (SR number)
-  const linkText = link.textContent.trim();
-
-  // Extract value before first space (consistent with Middleware Log Search)
-  const spaceIndex = linkText.indexOf(' ');
-  const valueToValidate = spaceIndex !== -1 ? linkText.substring(0, spaceIndex) : linkText;
-
-  // Validate it looks like an SR number (8-9 digits)
-  if (!SR_NUMBER_PATTERN.test(valueToValidate)) {
-    return null;
-  }
-
-  // Check if this link is in a "Request Number" column
-  if (isInRequestNumberColumn(link)) {
-    return valueToValidate;
-  }
-
-  // Even if not in the right column, if it looks like an SR number, use it
-  // This provides flexibility for different page layouts
-  return valueToValidate;
-}
-
-/**
- * Check if an element is within a "Request Number" column
- */
-function isInRequestNumberColumn(element) {
-  // Find the table cell containing this element
-  const cell = element.closest('td');
-  if (!cell) return false;
-
-  // Find the row and table
-  const row = cell.closest('tr');
-  const table = cell.closest('table');
-  if (!row || !table) return false;
-
-  // Get the column index
-  const cells = Array.from(row.querySelectorAll('td, th'));
-  const cellIndex = cells.indexOf(cell);
-  if (cellIndex === -1) return false;
-
-  // Find the header row
-  const headerRow = table.querySelector('thead tr') || table.querySelector('tr');
-  if (!headerRow) return false;
-
-  // Get the corresponding header cell
-  const headerCells = Array.from(headerRow.querySelectorAll('th, td'));
-  const headerCell = headerCells[cellIndex];
-  if (!headerCell) return false;
-
-  // Check if header text matches "Request Number"
-  const headerText = headerCell.textContent.trim();
-  if (headerText.includes(SR_COLUMN_HEADER)) {
-    return true;
-  }
-
-  // Also check for Salesforce-specific header structure
-  // Look for data-tooltip or title attribute containing "Request Number"
-  const tooltipElement = headerCell.querySelector('[data-tooltip*="Request Number"], [title*="Request Number"]');
-  if (tooltipElement) {
-    return true;
-  }
-
-  // Check for nested span with Request Number text
-  const headerSpan = headerCell.querySelector('.lightning-table-cell-measure-header-value, .wave-table-cell-measure-header-text');
-  if (headerSpan && headerSpan.textContent.includes(SR_COLUMN_HEADER)) {
-    return true;
-  }
-
-  return false;
-}
 
 //=============================================================================
 // SEARCH FUNCTIONALITY
@@ -574,11 +519,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // If we have selected text from the message, try that
     if (!srNumber && message.linkText) {
-      const text = message.linkText.trim();
-      const spaceIndex = text.indexOf(' ');
-      const valueToValidate = spaceIndex !== -1 ? text.substring(0, spaceIndex) : text;
-      if (SR_NUMBER_PATTERN.test(valueToValidate)) {
-        srNumber = valueToValidate;
+      srNumber = parseSRNumber(message.linkText);
+      if (srNumber) {
         console.log('[IR Finder] Using SR from message linkText:', srNumber);
       }
     }

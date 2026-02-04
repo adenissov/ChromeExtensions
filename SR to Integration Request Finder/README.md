@@ -24,7 +24,7 @@ When working with Service Requests in Salesforce, staff often need to view the I
 
 ### How to Use
 
-1. **Right-click** on a Service Request number (e.g., `08475332`) in any Salesforce page
+1. **Right-click** on a Service Request number link (e.g., `08475332` or `08475332 Customer Issue`) in any Salesforce page
 2. Select **"Search Integration Request"** from the context menu
 3. The extension automatically:
    - Opens the Salesforce global search
@@ -39,15 +39,24 @@ When working with Service Requests in Salesforce, staff often need to view the I
 | **1 result** | **Automatically opens** the Integration Request |
 | **2+ results** | Does nothing (user must choose) |
 
-### Menu Enable/Disable
+### SR Number Validation
 
-The context menu item is only enabled when clicking on valid SR numbers:
+The extension validates SR numbers using the `parseSRNumber()` function. Valid SR numbers are:
+- 8 or 9 digits (e.g., `08475332` or `084753321`)
+- Optionally followed by a space and descriptive text (e.g., `08475332 Customer Issue`)
 
-| Condition | Menu State |
-|-----------|------------|
-| Link with 8-9 digit text | **Enabled** |
-| Not a link | Disabled |
-| Link with letters or wrong digit count | Disabled |
+Only the numeric portion (before any space) is used for the search.
+
+| Input | Menu State | Extracted SR |
+|-------|------------|--------------|
+| `08475332` | **Enabled** | `08475332` |
+| `08475332 Customer Issue` | **Enabled** | `08475332` |
+| `084753321` (9 digits) | **Enabled** | `084753321` |
+| `08475332ABC` (no space) | Disabled | N/A |
+| `ABC08475332` | Disabled | N/A |
+| `0847533` (7 digits) | Disabled | N/A |
+| `0847533212` (10 digits) | Disabled | N/A |
+| Non-link element | Disabled | N/A |
 
 ---
 
@@ -205,7 +214,7 @@ SR to Integration Request Finder/
 ├── background.js               # Service worker (context menu + icon click)
 ├── content.js                  # SR detection and search execution
 ├── content-json-formatter.js   # JSON formatting and validation
-├── README.md                   # This file
+├── README.md                   # This file (user documentation)
 ├── PLAN.md                     # Technical architecture details
 └── images/
     ├── sr_to_ir_finder_icon16.png
@@ -242,8 +251,9 @@ The extension activates on:
 |---------|----------|
 | "Could not find search box" | Ensure you're on a Salesforce Lightning page with visible search |
 | Menu item is grayed out | Right-click directly on an 8-9 digit SR number link |
-| Search doesn't work twice | Wait 2 seconds between searches |
+| Search doesn't work twice | Wait 2 seconds between searches (cooldown period) |
 | Auto-click not working | Only triggers for exactly 1 result; check console for details |
+| "Extension context invalidated" | Refresh the Salesforce page after reloading the extension |
 
 ### JSON Formatter Issues
 
@@ -259,13 +269,19 @@ Check the browser console (F12) for debug messages:
 - `[IR Finder]` - SR to IR Finder messages
 - `[JSONFormatter]` - JSON Formatter messages
 
+Key debug messages:
+- `[IR Finder] parseSRNumber:` - Shows SR validation details (input, extracted value, valid/invalid)
+- `[IR Finder] Valid SR number detected:` - Confirms a valid SR was found
+- `[IR Finder] Menu state updated:` - Shows context menu enable/disable status
+
 ---
 
 ## Version History
 
 | Version | Changes |
 |---------|---------|
-| **1.1** | Added JSON Formatter & Validator (merged from separate extension) |
+| **1.2** | SR validation now accepts descriptive text after SR number (e.g., `08475332 Customer Issue`). Refactored to use centralized `parseSRNumber()` function. |
+| 1.1 | Added JSON Formatter & Validator (merged from separate extension) |
 | 1.0.2 | Auto-click single result feature |
 | 1.0.1 | Dynamic context menu enable/disable |
 | 1.0.0 | Initial release |
