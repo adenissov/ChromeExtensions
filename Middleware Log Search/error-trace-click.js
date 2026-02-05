@@ -35,9 +35,9 @@
   //===========================================================================
 
   /**
-   * Find column indices for Status Code, Trace, and Backend columns
+   * Find column indices for Status Code, Trace, Backend, and External Request ID columns
    * @param {HTMLTableElement} table - The data table
-   * @returns {Object|null} - { statusCodeIndex, traceIndex, backendIndex } or null if required columns not found
+   * @returns {Object|null} - { statusCodeIndex, traceIndex, backendIndex, externalRequestIdIndex } or null if required columns not found
    */
   function findColumnIndices(table) {
     const headerRow = table.querySelector(CONFIG.headerRowSelector);
@@ -85,7 +85,7 @@
   }
 
   //===========================================================================
-  // STATUS CODE PARSING
+  // CELL VALUE PARSING
   //===========================================================================
 
   /**
@@ -191,11 +191,13 @@
 
     console.log(LOG_PREFIX, 'Max status code:', maxStatusCode);
 
+    // Reverse rows once for bottom-to-top scanning (reused by both success and error cases)
+    const rowsReversed = Array.from(rows).reverse();
+
     // Case 2 & 3: Max is 200 or 202 (success)
     if (maxStatusCode === 200 || maxStatusCode === 202) {
       let backendValue = '';
       let externalRequestId = '';
-      const rowsReversed = Array.from(rows).reverse();
 
       for (const row of rowsReversed) {
         const cells = row.querySelectorAll('td');
@@ -238,24 +240,21 @@
 
     // Case 4: Max is anything else - find first non-success row bottom-to-top
     console.log(LOG_PREFIX, 'Error detected. Scanning bottom-to-top for first non-success row');
-    const rowsArray = Array.from(rows).reverse();
 
-    for (const row of rowsArray) {
+    for (const row of rowsReversed) {
       const cells = row.querySelectorAll('td');
       if (cells.length <= Math.max(indices.statusCodeIndex, indices.traceIndex)) {
         continue;
       }
 
-      const statusCodeCell = cells[indices.statusCodeIndex];
-      const traceCell = cells[indices.traceIndex];
-      const statusCode = parseStatusCode(statusCodeCell);
+      const statusCode = parseStatusCode(cells[indices.statusCodeIndex]);
 
       if (statusCode !== null && !CONFIG.successStatusCodes.has(statusCode)) {
         const backendValue = (indices.backendIndex !== -1 && cells.length > indices.backendIndex)
           ? parseCellText(cells[indices.backendIndex])
           : '';
         console.log(LOG_PREFIX, 'Found non-success status:', statusCode, 'backend:', backendValue);
-        if (clickTraceLink(traceCell, statusCode, backendValue)) {
+        if (clickTraceLink(cells[indices.traceIndex], statusCode, backendValue)) {
           return true;
         }
       }

@@ -38,6 +38,34 @@ let pendingAllItems = [];
 //=============================================================================
 
 /**
+ * Build display prefix from backend value and status code
+ * @param {string} backendValue - The Backend column value
+ * @param {number} statusCode - The HTTP status code
+ * @returns {string} - Formatted prefix, e.g. "(Backend=ABC, Status=404) "
+ */
+function formatStatusPrefix(backendValue, statusCode) {
+  return '(Backend=' + backendValue + ', Status=' + statusCode + ') ';
+}
+
+/**
+ * Clear pending Kibana state (status code and backend value)
+ */
+function clearPendingState() {
+  pendingStatusCode = null;
+  pendingBackendValue = null;
+}
+
+/**
+ * If processing a queue, clean up tabs and advance to next item
+ */
+function advanceQueueIfProcessing() {
+  if (isProcessingQueue) {
+    cleanupCurrentTabs();
+    processNextInQueue();
+  }
+}
+
+/**
  * Send display update to Salesforce tab
  * @param {string} responseBody - The message to display
  */
@@ -141,22 +169,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'statusResult') {
     console.log('[Middleware Log] Status result:', message.statusCode, message.displayText);
     updateSRDisplay(message.displayText);
-
-    if (isProcessingQueue) {
-      cleanupCurrentTabs();
-      processNextInQueue();
-    }
+    advanceQueueIfProcessing();
   }
 
   // Handle no records found in Kibana (empty table)
   if (message.action === 'noRecordsFound') {
     console.log('[Middleware Log] No records found in Kibana');
     updateSRDisplay('No records in the Middleware log');
-
-    if (isProcessingQueue) {
-      cleanupCurrentTabs();
-      processNextInQueue();
-    }
+    advanceQueueIfProcessing();
   }
 
   // Handle response body extracted from Jaeger
@@ -164,24 +184,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('[Middleware Log] Received response body:', message.responseBody);
 
     if (message.responseBody) {
-      // Prepend Backend and status code if available
       let displayText = message.responseBody;
       if (pendingStatusCode !== null) {
-        displayText = '(Backend=' + pendingBackendValue + ', Status=' + pendingStatusCode + ') ' + message.responseBody;
+        displayText = formatStatusPrefix(pendingBackendValue, pendingStatusCode) + message.responseBody;
       }
-      pendingStatusCode = null;
-      pendingBackendValue = null;
       updateSRDisplay(displayText);
     } else {
       console.log('[Middleware Log] Missing response body');
-      pendingStatusCode = null;
-      pendingBackendValue = null;
     }
 
-    if (isProcessingQueue) {
-      cleanupCurrentTabs();
-      processNextInQueue();
-    }
+    clearPendingState();
+    advanceQueueIfProcessing();
   }
 });
 
@@ -212,8 +225,7 @@ function cleanupCurrentTabs() {
  */
 function processNextInQueue() {
   currentSearchIndex++;
-  pendingStatusCode = null;
-  pendingBackendValue = null;
+  clearPendingState();
 
   if (currentSearchIndex >= searchQueue.length) {
     // All done
@@ -256,9 +268,8 @@ function processNextInQueue() {
           // Build timeout message with status code if available
           let timeoutMessage = 'No records in the Middleware log';
           if (pendingStatusCode !== null) {
-            timeoutMessage = '(Backend=' + pendingBackendValue + ', Status=' + pendingStatusCode + ') Jaeger extraction timed out';
-            pendingStatusCode = null;
-            pendingBackendValue = null;
+            timeoutMessage = formatStatusPrefix(pendingBackendValue, pendingStatusCode) + 'Jaeger extraction timed out';
+            clearPendingState();
           }
           // Update display to show timeout
           chrome.tabs.sendMessage(sourceTabId, {
