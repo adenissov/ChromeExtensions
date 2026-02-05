@@ -130,7 +130,7 @@
     try {
       chrome.runtime.sendMessage({
         action: 'responseBodyExtracted',
-        responseBody: 'No records in Middleware log'
+        responseBody: 'No records in the Middleware log'
       });
       console.log('[Middleware Log] No records message sent to background');
     } catch (error) {

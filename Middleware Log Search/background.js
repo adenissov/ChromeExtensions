@@ -26,6 +26,10 @@ let isProcessingQueue = false;
 let currentKibanaTabId = null;
 let currentJaegerTabId = null;
 
+// Status code and backend value of the current error being traced (for prepending to Jaeger result)
+let pendingStatusCode = null;
+let pendingBackendValue = null;
+
 // Stored items from last right-click (for "Search All")
 let pendingAllItems = [];
 
@@ -123,7 +127,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Handle request to open URL in background tab
   if (message.action === 'openInBackground') {
-    console.log('[Middleware Log] Opening in background tab:', message.url);
+    console.log('[Middleware Log] Opening in background tab:', message.url, 'status:', message.statusCode, 'backend:', message.backendValue);
+    pendingStatusCode = message.statusCode || null;
+    pendingBackendValue = message.backendValue || '';
     chrome.tabs.create({ url: message.url, active: false }, (tab) => {
       if (isProcessingQueue) {
         currentJaegerTabId = tab.id;
@@ -131,10 +137,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
   }
 
-  // Handle no errors found in Kibana (no status code >= 300)
-  if (message.action === 'noErrorsFound') {
-    console.log('[Middleware Log] No errors found in Kibana');
-    updateSRDisplay('Waiting for a BackEnd ID...');
+  // Handle direct status result from Kibana (no Jaeger needed)
+  if (message.action === 'statusResult') {
+    console.log('[Middleware Log] Status result:', message.statusCode, message.displayText);
+    updateSRDisplay(message.displayText);
 
     if (isProcessingQueue) {
       cleanupCurrentTabs();
@@ -145,7 +151,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Handle no records found in Kibana (empty table)
   if (message.action === 'noRecordsFound') {
     console.log('[Middleware Log] No records found in Kibana');
-    updateSRDisplay('No records in Middleware log');
+    updateSRDisplay('No records in the Middleware log');
 
     if (isProcessingQueue) {
       cleanupCurrentTabs();
@@ -158,9 +164,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('[Middleware Log] Received response body:', message.responseBody);
 
     if (message.responseBody) {
-      updateSRDisplay(message.responseBody);
+      // Prepend Backend and status code if available
+      let displayText = message.responseBody;
+      if (pendingStatusCode !== null) {
+        displayText = '(Backend=' + pendingBackendValue + ', Status=' + pendingStatusCode + ') ' + message.responseBody;
+      }
+      pendingStatusCode = null;
+      pendingBackendValue = null;
+      updateSRDisplay(displayText);
     } else {
       console.log('[Middleware Log] Missing response body');
+      pendingStatusCode = null;
+      pendingBackendValue = null;
     }
 
     if (isProcessingQueue) {
@@ -197,6 +212,8 @@ function cleanupCurrentTabs() {
  */
 function processNextInQueue() {
   currentSearchIndex++;
+  pendingStatusCode = null;
+  pendingBackendValue = null;
 
   if (currentSearchIndex >= searchQueue.length) {
     // All done
@@ -236,12 +253,19 @@ function processNextInQueue() {
         const currentItem = searchQueue[currentSearchIndex];
         if (currentItem && currentItem.srNumber === timeoutSrNumber) {
           console.log('[Middleware Log] Timeout for SR:', timeoutSrNumber);
+          // Build timeout message with status code if available
+          let timeoutMessage = 'No records in the Middleware log';
+          if (pendingStatusCode !== null) {
+            timeoutMessage = '(Backend=' + pendingBackendValue + ', Status=' + pendingStatusCode + ') Jaeger extraction timed out';
+            pendingStatusCode = null;
+            pendingBackendValue = null;
+          }
           // Update display to show timeout
           chrome.tabs.sendMessage(sourceTabId, {
             action: 'updateSRDisplay',
             elementId: item.elementId,
             srNumber: item.srNumber,
-            responseBody: 'No records in Middleware log'
+            responseBody: timeoutMessage
           }).catch(() => {});
           cleanupCurrentTabs();
           processNextInQueue();

@@ -1,5 +1,5 @@
 // Error Trace Click - Content Script
-// Scans Status Code column bottom-to-top and clicks Trace link on first HTTP error (>= 300)
+// Analyzes max status code in table; for errors (not 200/202), clicks Trace link on first error bottom-to-top
 // Triggered by extension icon click
 
 (function() {
@@ -22,10 +22,12 @@
     dataRowSelector: 'tbody tr.osdDocTable__row',
     statusCodeHeaderAttr: 'docTableHeader-Status Code',
     traceHeaderAttr: 'docTableHeader-Trace',
+    backendHeaderAttr: 'docTableHeader-Backend',
+    externalRequestIdHeaderAttr: 'docTableHeader-External Request ID',
     cellValueSelector: 'span[ng-non-bindable]',
     traceLinkSelector: 'a[href]',
     observerTimeout: 10000,  // 10 seconds max wait for table
-    errorStatusThreshold: 300
+    successStatusCodes: new Set([200, 202])
   };
 
   //===========================================================================
@@ -33,9 +35,9 @@
   //===========================================================================
 
   /**
-   * Find column indices for Status Code and Trace columns
+   * Find column indices for Status Code, Trace, and Backend columns
    * @param {HTMLTableElement} table - The data table
-   * @returns {Object|null} - { statusCodeIndex, traceIndex } or null if not found
+   * @returns {Object|null} - { statusCodeIndex, traceIndex, backendIndex } or null if required columns not found
    */
   function findColumnIndices(table) {
     const headerRow = table.querySelector(CONFIG.headerRowSelector);
@@ -47,6 +49,8 @@
     const headers = headerRow.querySelectorAll('th');
     let statusCodeIndex = -1;
     let traceIndex = -1;
+    let backendIndex = -1;
+    let externalRequestIdIndex = -1;
 
     headers.forEach((th, index) => {
       const span = th.querySelector('span[data-test-subj]');
@@ -56,6 +60,10 @@
           statusCodeIndex = index;
         } else if (testSubj === CONFIG.traceHeaderAttr) {
           traceIndex = index;
+        } else if (testSubj === CONFIG.backendHeaderAttr) {
+          backendIndex = index;
+        } else if (testSubj === CONFIG.externalRequestIdHeaderAttr) {
+          externalRequestIdIndex = index;
         }
       }
     });
@@ -65,8 +73,15 @@
       return null;
     }
 
-    console.log(LOG_PREFIX, 'Column indices found. StatusCode:', statusCodeIndex, 'Trace:', traceIndex);
-    return { statusCodeIndex, traceIndex };
+    if (backendIndex === -1) {
+      console.log(LOG_PREFIX, 'Backend column not found - will use empty value');
+    }
+    if (externalRequestIdIndex === -1) {
+      console.log(LOG_PREFIX, 'External Request ID column not found - will use empty value');
+    }
+
+    console.log(LOG_PREFIX, 'Column indices found. StatusCode:', statusCodeIndex, 'Trace:', traceIndex, 'Backend:', backendIndex, 'ExtReqId:', externalRequestIdIndex);
+    return { statusCodeIndex, traceIndex, backendIndex, externalRequestIdIndex };
   }
 
   //===========================================================================
@@ -87,6 +102,20 @@
     return isNaN(code) ? null : code;
   }
 
+  /**
+   * Extract text value from a table cell
+   * @param {HTMLTableCellElement} cell - The table cell
+   * @returns {string} - Trimmed text value or empty string
+   */
+  function parseCellText(cell) {
+    if (!cell) return '';
+    // Try the standard value span first
+    const valueSpan = cell.querySelector(CONFIG.cellValueSelector);
+    const text = valueSpan ? valueSpan.textContent.trim() : cell.textContent.trim();
+    // Kibana shows "-" for empty/null values — treat as empty
+    return text === '-' ? '' : text;
+  }
+
   //===========================================================================
   // TRACE LINK CLICK
   //===========================================================================
@@ -94,16 +123,20 @@
   /**
    * Open the trace link in a background tab
    * @param {HTMLTableCellElement} cell - The Trace cell
+   * @param {number} statusCode - The HTTP status code for this row
+   * @param {string} backendValue - The Backend column value for this row
    * @returns {boolean} - True if link was found and opened
    */
-  function clickTraceLink(cell) {
+  function clickTraceLink(cell, statusCode, backendValue) {
     const link = cell.querySelector(CONFIG.traceLinkSelector);
     if (link && link.href) {
-      console.log(LOG_PREFIX, 'Opening trace link in background:', link.href);
+      console.log(LOG_PREFIX, 'Opening trace link in background:', link.href, 'status:', statusCode, 'backend:', backendValue);
       // Send to background script to open in background tab
       chrome.runtime.sendMessage({
         action: 'openInBackground',
-        url: link.href
+        url: link.href,
+        statusCode: statusCode,
+        backendValue: backendValue
       });
       return true;
     }
@@ -116,7 +149,7 @@
   //===========================================================================
 
   /**
-   * Scan table for HTTP errors and click first trace link (bottom-to-top)
+   * Analyze max status code in table and take appropriate action
    * @param {HTMLTableElement} table - The data table
    * @returns {boolean} - True if an error trace was clicked
    */
@@ -126,41 +159,111 @@
 
     const rows = table.querySelectorAll(CONFIG.dataRowSelector);
 
-    // Handle empty table
+    // Case 1: Empty table
     if (rows.length === 0) {
       console.log(LOG_PREFIX, 'Table is empty - no records');
       chrome.runtime.sendMessage({ action: 'noRecordsFound' });
       return false;
     }
 
-    console.log(LOG_PREFIX, 'Scanning', rows.length, 'rows bottom-to-top');
+    console.log(LOG_PREFIX, 'Scanning', rows.length, 'rows for max status code');
 
-    // Convert to array and reverse for bottom-to-top iteration
+    // Phase 1: Find max status code across ALL rows
+    let maxStatusCode = -1;
+
+    for (const row of rows) {
+      const cells = row.querySelectorAll('td');
+      if (cells.length <= Math.max(indices.statusCodeIndex, indices.traceIndex)) {
+        continue;
+      }
+      const statusCode = parseStatusCode(cells[indices.statusCodeIndex]);
+      if (statusCode !== null && statusCode > maxStatusCode) {
+        maxStatusCode = statusCode;
+      }
+    }
+
+    // No parseable status codes
+    if (maxStatusCode === -1) {
+      console.log(LOG_PREFIX, 'No parseable status codes found');
+      chrome.runtime.sendMessage({ action: 'noRecordsFound' });
+      return false;
+    }
+
+    console.log(LOG_PREFIX, 'Max status code:', maxStatusCode);
+
+    // Case 2 & 3: Max is 200 or 202 (success)
+    if (maxStatusCode === 200 || maxStatusCode === 202) {
+      let backendValue = '';
+      let externalRequestId = '';
+      const rowsReversed = Array.from(rows).reverse();
+
+      for (const row of rowsReversed) {
+        const cells = row.querySelectorAll('td');
+        if (cells.length <= indices.statusCodeIndex) continue;
+
+        const rowCode = parseStatusCode(cells[indices.statusCodeIndex]);
+
+        if (maxStatusCode === 202) {
+          // For 202: only use a row with status code 202
+          if (rowCode !== 202) continue;
+        } else {
+          // For 200: use first row with non-empty Backend
+          if (indices.backendIndex === -1 || cells.length <= indices.backendIndex) continue;
+          if (!parseCellText(cells[indices.backendIndex])) continue;
+        }
+
+        // Extract Backend and External Request ID from this row
+        if (indices.backendIndex !== -1 && cells.length > indices.backendIndex) {
+          backendValue = parseCellText(cells[indices.backendIndex]);
+        }
+        if (indices.externalRequestIdIndex !== -1 && cells.length > indices.externalRequestIdIndex) {
+          externalRequestId = parseCellText(cells[indices.externalRequestIdIndex]);
+        }
+        break;
+      }
+
+      const prefix = '(Backend=' + backendValue + ', Status=' + maxStatusCode + ') ';
+      const message = maxStatusCode === 200
+        ? 'Sent request for back-end Id'
+        : 'Back-end Id received: ' + externalRequestId;
+
+      console.log(LOG_PREFIX, 'Success result. Backend:', backendValue, 'Code:', maxStatusCode, 'ExtReqId:', externalRequestId);
+      chrome.runtime.sendMessage({
+        action: 'statusResult',
+        statusCode: maxStatusCode,
+        displayText: prefix + message
+      });
+      return false;
+    }
+
+    // Case 4: Max is anything else - find first non-success row bottom-to-top
+    console.log(LOG_PREFIX, 'Error detected. Scanning bottom-to-top for first non-success row');
     const rowsArray = Array.from(rows).reverse();
 
     for (const row of rowsArray) {
       const cells = row.querySelectorAll('td');
-
       if (cells.length <= Math.max(indices.statusCodeIndex, indices.traceIndex)) {
-        continue;  // Row doesn't have enough cells
+        continue;
       }
 
       const statusCodeCell = cells[indices.statusCodeIndex];
       const traceCell = cells[indices.traceIndex];
-
       const statusCode = parseStatusCode(statusCodeCell);
 
-      if (statusCode !== null && statusCode >= CONFIG.errorStatusThreshold) {
-        console.log(LOG_PREFIX, 'Found HTTP error:', statusCode);
-        if (clickTraceLink(traceCell)) {
-          return true;  // Stop after first successful click
+      if (statusCode !== null && !CONFIG.successStatusCodes.has(statusCode)) {
+        const backendValue = (indices.backendIndex !== -1 && cells.length > indices.backendIndex)
+          ? parseCellText(cells[indices.backendIndex])
+          : '';
+        console.log(LOG_PREFIX, 'Found non-success status:', statusCode, 'backend:', backendValue);
+        if (clickTraceLink(traceCell, statusCode, backendValue)) {
+          return true;
         }
       }
     }
 
-    // Table has rows but no errors found
-    console.log(LOG_PREFIX, 'No HTTP errors found in', rows.length, 'records');
-    chrome.runtime.sendMessage({ action: 'noErrorsFound' });
+    // Fallback: shouldn't reach here if max is not in success set
+    console.log(LOG_PREFIX, 'No non-success rows found (unexpected)');
+    chrome.runtime.sendMessage({ action: 'noRecordsFound' });
     return false;
   }
 
