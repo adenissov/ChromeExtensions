@@ -226,7 +226,7 @@
 
       const prefix = '(Backend=' + backendValue + ', Status=' + maxStatusCode + ') ';
       const message = maxStatusCode === 200
-        ? 'Sent request for back-end Id'
+        ? 'Sent request to back-end'
         : 'Back-end Id received: ' + externalRequestId;
 
       console.log(LOG_PREFIX, 'Success result. Backend:', backendValue, 'Code:', maxStatusCode, 'ExtReqId:', externalRequestId);
