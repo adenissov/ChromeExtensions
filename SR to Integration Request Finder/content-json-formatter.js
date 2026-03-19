@@ -85,6 +85,13 @@ const validationRules = [
 		},
 		fields: ['lastName'],
 		message: 'Last name for Toronto Water is longer than 50 characters'
+	},
+	{
+		type: 'missing-sibling',
+		arrayField: 'intakeAnswers',
+		requiredField: 'questionPrompt',
+		flagField: 'response',
+		message: 'Missing expected questionPrompt'
 	}
 ];
 
@@ -122,6 +129,9 @@ function executeValidationRule(rule, jsonObject) {
 			break;
 		case 'custom':
 			executeCustomRule(rule, jsonObject);
+			break;
+		case 'missing-sibling':
+			executeMissingSiblingRule(rule, jsonObject);
 			break;
 	}
 }
@@ -189,6 +199,47 @@ function executeCustomRule(rule, jsonObject) {
 				});
 			});
 		});
+	}
+}
+
+/**
+ * Execute a missing-sibling validation rule.
+ * Checks that each element in a specified array contains a required field.
+ * If the field is missing, flags a sibling field as invalid.
+ */
+function executeMissingSiblingRule(rule, jsonObject, currentPath) {
+	if (currentPath === undefined) currentPath = '';
+	if (typeof jsonObject !== 'object' || jsonObject === null) return;
+
+	if (Array.isArray(jsonObject)) {
+		jsonObject.forEach((item, index) => {
+			var newPath = currentPath ? currentPath + '.' + index : index.toString();
+			executeMissingSiblingRule(rule, item, newPath);
+		});
+	} else {
+		for (var key in jsonObject) {
+			if (!jsonObject.hasOwnProperty(key)) continue;
+			var value = jsonObject[key];
+			var newPath = currentPath ? currentPath + '.' + key : key;
+
+			if (key === rule.arrayField && Array.isArray(value)) {
+				value.forEach((item, index) => {
+					if (typeof item === 'object' && item !== null && !(rule.requiredField in item)) {
+						var flagPath = newPath + '.' + index + '.' + rule.flagField;
+						validationResultsMap.set(flagPath, {
+							isValid: false,
+							message: rule.message,
+							fieldName: rule.flagField,
+							value: item[rule.flagField] !== undefined ? String(item[rule.flagField]) : ''
+						});
+					}
+				});
+			}
+
+			if (typeof value === 'object' && value !== null) {
+				executeMissingSiblingRule(rule, value, newPath);
+			}
+		}
 	}
 }
 
