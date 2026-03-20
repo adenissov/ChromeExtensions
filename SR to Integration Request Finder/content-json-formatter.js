@@ -91,7 +91,7 @@ const validationRules = [
 		arrayField: 'intakeAnswers',
 		requiredField: 'questionPrompt',
 		flagField: 'response',
-		message: 'Missing expected questionPrompt'
+		message: 'Missing "questionPrompt" element in intakeAnswer'
 	}
 ];
 
