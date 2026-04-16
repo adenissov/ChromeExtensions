@@ -2,6 +2,16 @@
 // Auto-formats JSON and validates fields when viewing INT-REQ pages
 // Originally from "311 Integration Request Validator" extension, merged into IR Finder
 
+// Guard against duplicate load: manifest registers this as a content script, and
+// background.js also re-injects on icon click. Without this, top-level const
+// declarations below throw "already declared" on the second execution.
+(function() {
+if (window.__311_JSON_FORMATTER_LOADED__) {
+	console.log('[JSONFormatter] Already loaded, skipping duplicate init');
+	return;
+}
+window.__311_JSON_FORMATTER_LOADED__ = true;
+
 //=============================================================================
 // CONFIGURATION
 //=============================================================================
@@ -87,15 +97,26 @@ const validationRules = [
 		message: 'Last name for Toronto Water is longer than 50 characters'
 	},
 	{
-		type: 'conditional',
-		condition: (obj) => obj.division === 'Municipal Licensing & Standards',
+		// Scoped to participants[].address.streetSuffix only, with per-element flagging,
+		// so a sibling like location.address.streetSuffix is not affected and only the
+		// actual long suffix is marked red.
+		type: 'custom',
 		validate: (obj) => {
-			if (!obj.participants || !Array.isArray(obj.participants)) return true;
-			return obj.participants.every(p =>
-				!p.address || !p.address.streetSuffix || p.address.streetSuffix.length <= 10
-			);
+			if (obj.division !== 'Municipal Licensing & Standards') return [];
+			if (!obj.participants || !Array.isArray(obj.participants)) return [];
+			var results = [];
+			obj.participants.forEach((p, i) => {
+				var suffix = p && p.address ? p.address.streetSuffix : undefined;
+				if (typeof suffix !== 'string' || suffix === '') return;
+				results.push({
+					path: 'participants.' + i + '.address.streetSuffix',
+					isValid: suffix.length <= 10,
+					fieldName: 'streetSuffix',
+					value: suffix
+				});
+			});
+			return results;
 		},
-		fields: ['streetSuffix'],
 		message: 'Street suffix for MLS is longer than 10 characters'
 	},
 	{
@@ -195,11 +216,27 @@ function executeConditionalRule(rule, jsonObject) {
 }
 
 /**
- * Execute a custom validation rule
+ * Execute a custom validation rule.
+ * validate() may return:
+ *   - a boolean: applies to every path matching rule.fields (legacy behavior)
+ *   - an array of { path, isValid, fieldName, value, message? }: per-path results
+ *     (use when only specific occurrences of a field should be flagged)
  */
 function executeCustomRule(rule, jsonObject) {
 	var result = rule.validate(jsonObject);
-	
+
+	if (Array.isArray(result)) {
+		result.forEach(entry => {
+			validationResultsMap.set(entry.path, {
+				isValid: entry.isValid,
+				message: entry.isValid ? undefined : (entry.message || rule.message),
+				fieldName: entry.fieldName,
+				value: entry.value
+			});
+		});
+		return;
+	}
+
 	if (rule.fields) {
 		rule.fields.forEach(fieldName => {
 			traverseAndValidate(jsonObject, fieldName, (value, path) => {
@@ -674,3 +711,5 @@ function init() {
 
 // Entry point - run when content script loads
 init();
+
+})(); // end load guard
