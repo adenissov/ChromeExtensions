@@ -87,6 +87,18 @@ const validationRules = [
 		message: 'Last name for Toronto Water is longer than 50 characters'
 	},
 	{
+		type: 'conditional',
+		condition: (obj) => obj.division === 'Municipal Licensing & Standards',
+		validate: (obj) => {
+			if (!obj.participants || !Array.isArray(obj.participants)) return true;
+			return obj.participants.every(p =>
+				!p.address || !p.address.streetSuffix || p.address.streetSuffix.length <= 10
+			);
+		},
+		fields: ['streetSuffix'],
+		message: 'Street suffix for MLS is longer than 10 characters'
+	},
+	{
 		type: 'missing-sibling',
 		arrayField: 'intakeAnswers',
 		requiredField: 'questionPrompt',
