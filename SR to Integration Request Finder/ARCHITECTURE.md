@@ -1,4 +1,4 @@
-# 311 SR to Integration Request Finder - Technical Architecture
+# SR Search Integration Requests - Technical Architecture
 
 ## Overview
 
@@ -61,7 +61,7 @@ This document describes the technical architecture and design decisions for the 
 
 | Permission | Purpose |
 |------------|---------|
-| `contextMenus` | Add "Search Integration Request" to right-click menu |
+| `contextMenus` | Add "SR Search Integration Requests" to right-click menu |
 | `activeTab` | Access current tab to send messages |
 | `scripting` | Inject content scripts into Salesforce pages |
 | `tabs` | Query and communicate with tabs |
@@ -182,8 +182,8 @@ User right-clicks SR number link
          │
          ▼
 ┌─────────────────────────────┐
-│ User clicks "Search         │
-│ Integration Request"        │
+│ User clicks "SR Search      │
+│ Integration Requests"       │
 └─────────────────────────────┘
          │
          ▼

@@ -1,5 +1,5 @@
 {
-  "name": "311 SR to Integration Request Finder",
+  "name": "SR Search Integration Requests",
   "description": "Right-click on Service Request number to search for its Integration Request. Auto-formats JSON and validates fields in INT-REQ pages.",
   "version": "1.2",
   "manifest_version": 3,
@@ -30,18 +30,18 @@
   ],
   "permissions": ["contextMenus", "activeTab", "scripting", "tabs"],
   "action": {
-    "default_title": "311 SR to Integration Request Finder",
+    "default_title": "SR Search Integration Requests",
     "default_icon": {
-      "16": "/images/sr_to_ir_finder_icon16.png",
-      "32": "/images/sr_to_ir_finder_icon32.png",
-      "48": "/images/sr_to_ir_finder_icon48.png",
-      "128": "/images/sr_to_ir_finder_icon128.png"
+      "16": "/images/311Logo_16.png",
+      "32": "/images/311Logo_32.png",
+      "48": "/images/311Logo_48.png",
+      "128": "/images/311Logo_128.png"
     }
   },
   "icons": {
-    "16": "/images/sr_to_ir_finder_icon16.png",
-    "32": "/images/sr_to_ir_finder_icon32.png",
-    "48": "/images/sr_to_ir_finder_icon48.png",
-    "128": "/images/sr_to_ir_finder_icon128.png"
+    "16": "/images/311Logo_16.png",
+    "32": "/images/311Logo_32.png",
+    "48": "/images/311Logo_48.png",
+    "128": "/images/311Logo_128.png"
   }
 }

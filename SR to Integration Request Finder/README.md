@@ -1,4 +1,4 @@
-# 311 SR to Integration Request Finder
+# SR Search Integration Requests
 
 A Chrome/Edge extension for City of Toronto 311 staff that provides two key Salesforce productivity features:
 
@@ -25,7 +25,7 @@ When working with Service Requests in Salesforce, staff often need to view the I
 ### How to Use
 
 1. **Right-click** on a Service Request number link (e.g., `08475332` or `08475332 Customer Issue`) in any Salesforce page
-2. Select **"Search Integration Request"** from the context menu
+2. Select **"SR Search Integration Requests"** from the context menu
 3. The extension automatically:
    - Opens the Salesforce global search
    - Enters the search query: `Request|{SR_NUMBER}`
@@ -272,10 +272,10 @@ SR to Integration Request Finder/
 ├── README.md                   # This file (user documentation)
 ├── ARCHITECTURE.md             # Technical architecture details
 └── images/
-    ├── sr_to_ir_finder_icon16.png
-    ├── sr_to_ir_finder_icon32.png
-    ├── sr_to_ir_finder_icon48.png
-    └── sr_to_ir_finder_icon128.png
+    ├── 311Logo_16.png
+    ├── 311Logo_32.png
+    ├── 311Logo_48.png
+    └── 311Logo_128.png
 ```
 
 ### File Responsibilities
@@ -335,7 +335,7 @@ Key debug messages:
 
 | Version | Changes |
 |---------|---------|
-| **1.2** | SR validation now accepts descriptive text after SR number (e.g., `08475332 Customer Issue`). Refactored to use centralized `parseSRNumber()` function. |
+| **1.2** | Renamed extension to "SR Search Integration Requests" (removed "311" prefix). Context menu item renamed to "SR Search Integration Requests". Icons replaced with 311 Logo PNGs (`311Logo_{16,32,48,128}.png`). SR validation now accepts descriptive text after SR number (e.g., `08475332 Customer Issue`). Refactored to use centralized `parseSRNumber()` function. |
 | 1.1 | Added JSON Formatter & Validator (merged from separate extension) |
 | 1.0.2 | Auto-click single result feature |
 | 1.0.1 | Dynamic context menu enable/disable |

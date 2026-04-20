@@ -1,5 +1,5 @@
 {
-  "name": "311 Middleware Log Search v1.0",
+  "name": "SR  Search in Middleware Log",
   "description": "Right-click on Service Request number to search middleware logs in Kibana",
   "version": "1.0",
   "manifest_version": 3,
@@ -37,16 +37,16 @@
   "action": {
     "default_title": "Middleware Log Search",
     "default_icon": {
-      "16": "/images/sr_in_middlware_search16.png",
-      "32": "/images/sr_in_middlware_search32.png",
-      "48": "/images/sr_in_middlware_search48.png",
-      "128": "/images/sr_in_middlware_search128.png"
+      "16": "/images/311Logo_16.png",
+      "32": "/images/311Logo_32.png",
+      "48": "/images/311Logo_48.png",
+      "128": "/images/311Logo_128.png"
     }
   },
   "icons": {
-    "16": "/images/sr_in_middlware_search16.png",
-    "32": "/images/sr_in_middlware_search32.png",
-    "48": "/images/sr_in_middlware_search48.png",
-    "128": "/images/sr_in_middlware_search128.png"
+    "16": "/images/311Logo_16.png",
+    "32": "/images/311Logo_32.png",
+    "48": "/images/311Logo_48.png",
+    "128": "/images/311Logo_128.png"
   }
 }
