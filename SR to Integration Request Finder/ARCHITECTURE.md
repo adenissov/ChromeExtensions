@@ -52,7 +52,7 @@ This document describes the technical architecture and design decisions for the 
 | `content.js` | Content script: SR detection, search execution, auto-click |
 | `content-json-formatter.js` | Content script: JSON formatting, validation |
 | `README.md` | User documentation |
-| `PLAN.md` | This file - technical architecture |
+| `ARCHITECTURE.md` | This file - technical architecture |
 | `images/` | Extension icons |
 
 ---
@@ -357,17 +357,55 @@ new KeyboardEvent('keydown', {
 
 ### 8. JSON Validation Architecture
 
-**Decision**: Declarative rule-based validation system.
+**Decision**: Declarative rule-based validation system. Rules live in the `validationRules` array in `content-json-formatter.js`. A single validation pass (`performValidation`) runs all rules before rendering, storing per-path results in a `Map` (`validationResultsMap`). The renderer then looks up each field path during output.
 
 **Rationale**:
-- Easy to add new rules without code changes
+- Easy to add new rules without changing renderer code
 - Consistent validation behavior
 - Separation of rules from rendering logic
+- Path-based result storage lets rules flag specific occurrences of a field rather than every field of a given name
 
 **Rule Types**:
-- `regex` - Pattern matching on field values
-- `conditional` - Cross-field validation with preconditions
-- `custom` - Complex custom logic
+| Type | Executor | Purpose |
+|------|----------|---------|
+| `regex` | `executeRegexRule` | Pattern match on values of every field whose name is in `rule.fields` |
+| `conditional` | `executeConditionalRule` | Gate on a precondition `rule.condition(obj)`, then run `rule.validate(obj)` once; all matching fields share the same pass/fail |
+| `custom` | `executeCustomRule` | Flexible logic. `validate(obj)` returns either: (a) a boolean applied to every field in `rule.fields` (legacy), or (b) an **array of per-path results** `[{ path, isValid, fieldName, value, message? }, ...]` — preferred for anything scoped to specific paths |
+| `missing-sibling` | `executeMissingSiblingRule` | For each element in a named array, checks that a required field exists; if missing, flags a sibling field as invalid with a message |
+
+**Path format**: Paths use dot separators between keys and array indices and must match how `insertJsonObjectIntoText` builds `fieldPath` (e.g., `participants.0.address.streetSuffix`).
+
+### 9. Path-Specific Validation Rule (project convention)
+
+**Rule**: Any validation targeting specific object paths **must** use path-specific results — never a rule type that flags every same-named field across the JSON tree.
+
+**Why**: `regex`, `conditional`, and the boolean form of `custom` all walk the tree via `traverseAndValidate` and tag every occurrence of a matching field name with a single shared pass/fail. In practice this produced two defects:
+1. A rule intended for `participants[i].address.streetSuffix` also flagged `location.address.streetSuffix` (same field name, different path).
+2. A single bad participant caused every other participant's valid field to render red, since all shared the same boolean.
+
+**How to apply**:
+- For any rule whose scope depends on a deep or specific path, write it as `type: 'custom'` and have `validate(obj)` return an array of `{ path, isValid, fieldName, value }` objects.
+- Build paths with the exact dot-separated form the renderer uses (array indices included, e.g., `participants.0.address.streetSuffix`).
+- Reserve `regex` / `conditional` / boolean-`custom` for rules that are genuinely intended to apply to every occurrence of a field name in the payload.
+
+### 10. Duplicate-Load Guard in content-json-formatter.js
+
+**Challenge**: The script is both registered as a content script in `manifest.json` (auto-injected on page load) and re-injected by `background.js` via `chrome.scripting.executeScript` on icon click (defensive fallback for tabs that predate the content-script registration). The second execution re-runs the file in the same isolated world, which throws `Uncaught SyntaxError: Identifier 'PROCESSING_DELAY_MS' has already been declared` and also double-registers listeners.
+
+**Solution**: The entire file body is wrapped in an IIFE with a `window.__311_JSON_FORMATTER_LOADED__` sentinel. On re-injection the guard logs a skip message and returns before any declarations execute.
+
+```javascript
+(function() {
+if (window.__311_JSON_FORMATTER_LOADED__) {
+    console.log('[JSONFormatter] Already loaded, skipping duplicate init');
+    return;
+}
+window.__311_JSON_FORMATTER_LOADED__ = true;
+
+// ... file body ...
+
+})(); // end load guard
+```
 
 ---
 

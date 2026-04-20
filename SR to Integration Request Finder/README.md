@@ -94,9 +94,20 @@ The JSON Formatter includes a validation engine that can be extended with new ru
 
 | Type | Use Case | Required Properties |
 |------|----------|---------------------|
-| `regex` | Simple pattern matching on field values | `fields`, `pattern`, `message` |
-| `conditional` | Cross-field validation with preconditions | `fields`, `condition`, `validate`, `message` |
-| `custom` | Complex custom logic | `fields`, `validate`, `message` |
+| `regex` | Pattern match against **every** occurrence of the listed field names | `fields`, `pattern`, `message` |
+| `conditional` | Gate on a precondition, then run a single pass/fail that is applied to every matching field | `fields`, `condition`, `validate`, `message` |
+| `custom` | Flexible logic. `validate(obj)` returns either a boolean (applied to every field in `rule.fields`, legacy) or an **array of per-path results** (preferred for anything scoped to a specific path) | `validate`, `message` (+ `fields` when returning a boolean) |
+| `missing-sibling` | For each element of a named array, flag a sibling field when a required field is missing | `arrayField`, `requiredField`, `flagField`, `message` |
+
+### Rule: Use Path-Specific Validation
+
+**Any rule whose scope depends on a specific object path must use `type: 'custom'` with a per-path array return.** Do not use `regex`, `conditional`, or the boolean form of `custom` for path-scoped validation.
+
+**Why:** those rule types walk the entire JSON tree and apply a single pass/fail to every field that shares the target name. That produces two problems:
+1. **Wrong matches** — a rule intended for `participants[i].address.streetSuffix` also flags `location.address.streetSuffix` because they share the field name.
+2. **All-or-nothing** — if one participant fails, every other participant's valid field is also painted red.
+
+**How:** return an array of per-path results from `validate(obj)`. Each entry is `{ path, isValid, fieldName, value, message? }`. Only the paths you return are colored, and each is evaluated independently. Build the path string with the same dot-separated form the renderer uses (array indices included), e.g., `participants.0.address.streetSuffix`.
 
 ### Adding a Regex Rule
 
@@ -152,24 +163,52 @@ Use when validation depends on another field's value:
 }
 ```
 
-### Adding a Custom Rule
+### Adding a Custom Rule (preferred for path-specific validation)
 
-Use for complex validation that doesn't fit other types:
+The `custom` rule type supports two return shapes from `validate(obj)`:
+
+**(a) Array of per-path results — preferred.** Each entry flags exactly one path:
 
 ```javascript
 {
     type: 'custom',
     validate: (obj) => {
-        // Custom validation logic
-        // Return true if valid, false if invalid
-        return someComplexValidation(obj);
+        // Return an array of { path, isValid, fieldName, value, message? }
+        // Only the paths you return are colored; each is evaluated independently.
+        const results = [];
+        // ...build `results` by inspecting obj and its specific paths...
+        return results;
     },
-    fields: ['field1', 'field2'],  // Fields to highlight if invalid
-    message: 'Custom error message'
+    message: 'Fallback message if an entry omits its own message'
 }
 ```
 
-**Example - Validate that emergency requests have high priority:**
+**Example — Street suffix length limit for one division, scoped to `participants[].address.streetSuffix` only:**
+```javascript
+{
+    type: 'custom',
+    validate: (obj) => {
+        if (obj.division !== 'Municipal Licensing & Standards') return [];
+        if (!obj.participants || !Array.isArray(obj.participants)) return [];
+        var results = [];
+        obj.participants.forEach((p, i) => {
+            var suffix = p && p.address ? p.address.streetSuffix : undefined;
+            if (typeof suffix !== 'string' || suffix === '') return;
+            results.push({
+                path: 'participants.' + i + '.address.streetSuffix',
+                isValid: suffix.length <= 10,
+                fieldName: 'streetSuffix',
+                value: suffix
+            });
+        });
+        return results;
+    },
+    message: 'Street suffix for MLS is longer than 10 characters'
+}
+```
+
+**(b) Boolean — legacy.** Applied uniformly to every occurrence of every field named in `rule.fields`. Only use this when the rule is genuinely meant to apply to every such field in the payload:
+
 ```javascript
 {
     type: 'custom',
@@ -179,6 +218,20 @@ Use for complex validation that doesn't fit other types:
     },
     fields: ['priority'],
     message: 'Emergency requests must have High priority'
+}
+```
+
+### Adding a Missing-Sibling Rule
+
+Use when each element of an array must contain a required field, and the absence of that field should be flagged on a sibling field of the same element:
+
+```javascript
+{
+    type: 'missing-sibling',
+    arrayField: 'intakeAnswers',    // Array whose elements are checked
+    requiredField: 'questionPrompt', // Must be present on each element
+    flagField: 'response',           // Highlighted red when requiredField is missing
+    message: 'Missing "questionPrompt" element in intakeAnswer'
 }
 ```
 
@@ -193,6 +246,8 @@ Use for complex validation that doesn't fit other types:
 | `email` | regex | Valid email format |
 | `firstName` (Toronto Water) | conditional | Max 30 characters |
 | `lastName` (Toronto Water) | conditional | Max 50 characters |
+| `participants[].address.streetSuffix` (Municipal Licensing & Standards) | custom (path-specific) | Max 10 characters; only flags the participants path, not siblings like `location.address.streetSuffix` |
+| `intakeAnswers[].response` | missing-sibling | Flagged red when the element is missing a `questionPrompt` field |
 
 ---
 
@@ -215,7 +270,7 @@ SR to Integration Request Finder/
 ├── content.js                  # SR detection and search execution
 ├── content-json-formatter.js   # JSON formatting and validation
 ├── README.md                   # This file (user documentation)
-├── PLAN.md                     # Technical architecture details
+├── ARCHITECTURE.md             # Technical architecture details
 └── images/
     ├── sr_to_ir_finder_icon16.png
     ├── sr_to_ir_finder_icon32.png
