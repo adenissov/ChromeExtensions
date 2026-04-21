@@ -1,5 +1,5 @@
 {
-  "name": "SR Search Integration Requests",
+  "name": "SR Search in Integration Requests",
   "description": "Right-click on Service Request number to search for its Integration Request. Auto-formats JSON and validates fields in INT-REQ pages.",
   "version": "1.2",
   "manifest_version": 3,
