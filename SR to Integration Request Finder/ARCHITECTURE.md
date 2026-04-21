@@ -61,7 +61,7 @@ This document describes the technical architecture and design decisions for the 
 
 | Permission | Purpose |
 |------------|---------|
-| `contextMenus` | Add "SR Search in.Integration Requests" to right-click menu |
+| `contextMenus` | Add "SR Search in_Integration Requests" to right-click menu |
 | `activeTab` | Access current tab to send messages |
 | `scripting` | Inject content scripts into Salesforce pages |
 | `tabs` | Query and communicate with tabs |
@@ -407,17 +407,17 @@ window.__311_JSON_FORMATTER_LOADED__ = true;
 })(); // end load guard
 ```
 
-### 11. Context Menu Title Uses a "." to Improve Sort Position
+### 11. Context Menu Title Uses a "_" to Improve Sort Position
 
 **Challenge**: Chrome's `chrome.contextMenus` API does not let an extension choose the position of its menu item. When several extensions register menu items, Chrome sorts them alphabetically by `title` (case-insensitive, locale-aware), so by default the position depends solely on the item's name and on what other extensions happen to be installed.
 
-**Solution**: The context menu title is `"SR Search in.Integration Requests"` — note the `.` instead of a space between `in` and `Integration`. A period sorts before any letter, so the item sorts ahead of any extension whose title starts with `A`–`Z` / `a`–`z`, raising it toward the top of the right-click menu.
+**Solution**: The context menu title is `"SR Search in_Integration Requests"` — note the `_` instead of a space between `in` and `Integration`. An underscore sorts before any letter, so the item sorts ahead of any extension whose title starts with `A`–`Z` / `a`–`z`, raising it toward the top of the right-click menu.
 
 **Note**: This only affects the **context menu** title in `background.js`:
 ```javascript
 chrome.contextMenus.create({
   id: 'searchIntegrationRequest',
-  title: 'SR Search in.Integration Requests',
+  title: 'SR Search in_Integration Requests',
   ...
 });
 ```

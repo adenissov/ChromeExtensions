@@ -25,7 +25,7 @@ When working with Service Requests in Salesforce, staff often need to view the I
 ### How to Use
 
 1. **Right-click** on a Service Request number link (e.g., `08475332` or `08475332 Customer Issue`) in any Salesforce page
-2. Select **"SR Search in.Integration Requests"** from the context menu
+2. Select **"SR Search in_Integration Requests"** from the context menu
 3. The extension automatically:
    - Opens the Salesforce global search
    - Enters the search query: `Request|{SR_NUMBER}`
@@ -335,7 +335,7 @@ Key debug messages:
 
 | Version | Changes |
 |---------|---------|
-| **1.2** | Renamed extension to "SR Search in Integration Requests" (removed "311" prefix). Context menu item renamed to "SR Search in.Integration Requests" — the `.` after `in` is intentional: Chrome sorts extension context-menu items alphabetically (case-insensitive), and a period sorts before letters, giving this item a higher position in the right-click menu. Icons replaced with 311 Logo PNGs (`311Logo_{16,32,48,128}.png`). SR validation now accepts descriptive text after SR number (e.g., `08475332 Customer Issue`). Refactored to use centralized `parseSRNumber()` function. |
+| **1.2** | Renamed extension to "SR Search in Integration Requests" (removed "311" prefix). Context menu item renamed to "SR Search in_Integration Requests" — the `_` after `in` is intentional: Chrome sorts extension context-menu items alphabetically (case-insensitive), and an underscore sorts before letters, giving this item a higher position in the right-click menu. Icons replaced with 311 Logo PNGs (`311Logo_{16,32,48,128}.png`). SR validation now accepts descriptive text after SR number (e.g., `08475332 Customer Issue`). Refactored to use centralized `parseSRNumber()` function. |
 | 1.1 | Added JSON Formatter & Validator (merged from separate extension) |
 | 1.0.2 | Auto-click single result feature |
 | 1.0.1 | Dynamic context menu enable/disable |
