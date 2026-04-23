@@ -7,6 +7,8 @@
 
 const KIBANA_URL_TEMPLATE = "http://portal.cc.toronto.ca:5601/app/dashboards#/view/c36f5e40-40fe-11ed-a166-53790178ef13?_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-30d,to:now))&_a=(query:(language:kuery,query:'NNNNNNNN'),filters:!(),viewMode:view)";
 
+const TIP_CHECK_INTEGRATION_REQUEST = ' ✅Tip:Check Integration Request for validation errors';
+
 //=============================================================================
 // STATE
 //=============================================================================
@@ -189,7 +191,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         displayText = formatStatusPrefix(pendingBackendValue, pendingStatusCode) + message.responseBody;
       }
       if (pendingStatusCode === 445 && pendingBackendValue === 'IBMS') {
-        displayText += ' ✅Tip:Check Integration Request for validation errors';
+        displayText += TIP_CHECK_INTEGRATION_REQUEST;
+      }
+      if (pendingStatusCode === 500 && pendingBackendValue === 'MAXIMO' &&
+          message.responseBody.includes('object has no attribute')) {
+        displayText += TIP_CHECK_INTEGRATION_REQUEST;
       }
       updateSRDisplay(displayText);
     } else {
