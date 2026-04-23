@@ -8,6 +8,7 @@
 const KIBANA_URL_TEMPLATE = "http://portal.cc.toronto.ca:5601/app/dashboards#/view/c36f5e40-40fe-11ed-a166-53790178ef13?_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-30d,to:now))&_a=(query:(language:kuery,query:'NNNNNNNN'),filters:!(),viewMode:view)";
 
 const TIP_CHECK_INTEGRATION_REQUEST = ' ✅Tip:Check Integration Request for validation errors';
+const TIP_IBMS_LOCATION_DB = ' ✅Tip: Error in the IBMS location database (likely missing Ward number for this GeoID)';
 
 //=============================================================================
 // STATE
@@ -190,8 +191,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (pendingStatusCode !== null) {
         displayText = formatStatusPrefix(pendingBackendValue, pendingStatusCode) + message.responseBody;
       }
-      if (pendingStatusCode === 445 && pendingBackendValue === 'IBMS') {
+      if (pendingStatusCode === 445 && pendingBackendValue === 'IBMS' &&
+          message.responseBody.includes('Neither RequestNumber nor ExternalRequestID found')) {
         displayText += TIP_CHECK_INTEGRATION_REQUEST;
+      }
+      if (pendingStatusCode === 445 && pendingBackendValue === 'IBMS' &&
+          message.responseBody.includes('NO DATA FOUND for some values associated with')) {
+        displayText += TIP_IBMS_LOCATION_DB;
       }
       if (pendingStatusCode === 500 && pendingBackendValue === 'MAXIMO' &&
           message.responseBody.includes('object has no attribute')) {
