@@ -188,6 +188,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (pendingStatusCode !== null) {
         displayText = formatStatusPrefix(pendingBackendValue, pendingStatusCode) + message.responseBody;
       }
+      if (pendingStatusCode === 445 && pendingBackendValue === 'IBMS') {
+        displayText += ' ✅Tip:Check Integration Request for validation errors';
+      }
       updateSRDisplay(displayText);
     } else {
       console.log('[Middleware Log] Missing response body');
