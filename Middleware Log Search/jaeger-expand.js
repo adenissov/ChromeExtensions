@@ -98,6 +98,51 @@
     return null;
   }
 
+  //===========================================================================
+  // BYTESTREAM O11Y EXTRACTION
+  //===========================================================================
+
+  /**
+   * Extract payload from ByteStream O11Y trace page.
+   * The page renders a JSON document as syntax-highlighted euiCodeBlock__line spans.
+   * Target path: data[0]._source.events[name==="response.payload"].attributes.payload
+   * If payload is escaped JSON, returns inner.errorMessage instead.
+   */
+  function extractPayloadFromByteStream() {
+    const lines = document.querySelectorAll('.euiCodeBlock__line');
+    if (lines.length === 0) return null;
+
+    const jsonText = Array.from(lines).map(l => l.textContent).join('\n');
+
+    try {
+      const data = JSON.parse(jsonText);
+      const items = Array.isArray(data) ? data : [data];
+
+      for (const item of items) {
+        const source = item._source || item;
+        const events = source.events;
+        if (!Array.isArray(events)) continue;
+
+        for (const event of events) {
+          if (event.name !== 'response.payload') continue;
+          const payload = event.attributes?.payload;
+          if (!payload) continue;
+
+          // If payload is escaped JSON, pull errorMessage from it
+          try {
+            const inner = JSON.parse(payload);
+            if (inner.errorMessage) return inner.errorMessage;
+          } catch (e) {}
+
+          return payload;
+        }
+      }
+    } catch (e) {
+      console.log('[Middleware Log] ByteStream JSON parse failed:', e.message);
+    }
+    return null;
+  }
+
   /**
    * Send extracted response body to background script
    * @param {string} responseBody - The extracted response body
@@ -147,7 +192,7 @@
     extractionAttempts++;
     console.log('[Middleware Log] Extracting response.body... (attempt', extractionAttempts + '/' + MAX_EXTRACTION_ATTEMPTS + ')');
 
-    const responseBody = extractResponseBody();
+    const responseBody = extractResponseBody() || extractPayloadFromByteStream();
     if (responseBody) {
       responseBodyExtracted = true;
       console.log('[Middleware Log] Response body found:', responseBody);
@@ -261,7 +306,7 @@
 
       // Check if any AccordianLogs, detail-row, or KeyValueTable appeared
       let hasNewAccordion = false;
-      let hasKeyValueTable = false;
+      let shouldAttemptExtraction = false;
 
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
@@ -275,8 +320,10 @@
             if (node.classList?.contains('KeyValueTable') ||
                 node.querySelector?.('.KeyValueTable') ||
                 node.classList?.contains('KeyValueTable--row') ||
-                node.querySelector?.('.KeyValueTable--row')) {
-              hasKeyValueTable = true;
+                node.querySelector?.('.KeyValueTable--row') ||
+                node.classList?.contains('euiCodeBlock__line') ||
+                node.querySelector?.('.euiCodeBlock__line')) {
+              shouldAttemptExtraction = true;
             }
           }
         }
@@ -287,8 +334,7 @@
         setTimeout(expandLogsAccordions, 100);
       }
 
-      if (hasKeyValueTable && !responseBodyExtracted) {
-        // KeyValueTable appeared, try to extract response body
+      if (shouldAttemptExtraction && !responseBodyExtracted) {
         setTimeout(attemptExtraction, 200);
       }
     });

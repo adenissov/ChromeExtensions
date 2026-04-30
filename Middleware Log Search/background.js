@@ -6,6 +6,8 @@
 //=============================================================================
 
 const KIBANA_URL_TEMPLATE = "http://portal.cc.toronto.ca:5601/app/dashboards#/view/c36f5e40-40fe-11ed-a166-53790178ef13?_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-30d,to:now))&_a=(query:(language:kuery,query:'NNNNNNNN'),filters:!(),viewMode:view)";
+const KIBANA_URL_TEMPLATE_STAGING = "https://staging.cc.toronto.ca:15601/app/dashboards#/view/2da28bb0-4309-11f1-be7c-49d712de5225?_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-30d,to:now))&_a=(query:(language:kuery,query:'NNNNNNNN'),filters:!(),viewMode:view)";
+const SR_THRESHOLD = 9227488;
 
 const TIP_CHECK_INTEGRATION_REQUEST = ' ✅Tip:Check Integration Request for validation errors';
 const TIP_IBMS_LOCATION_DB = ' ✅Tip: Error in the IBMS location database (likely missing Ward number for this GeoID)';
@@ -53,6 +55,12 @@ function formatStatusPrefix(backendValue, statusCode) {
 /**
  * Clear pending Kibana state (status code and backend value)
  */
+function getKibanaUrl(srNumber) {
+  return parseInt(srNumber, 10) > SR_THRESHOLD
+    ? KIBANA_URL_TEMPLATE_STAGING.replace('NNNNNNNN', srNumber)
+    : KIBANA_URL_TEMPLATE.replace('NNNNNNNN', srNumber);
+}
+
 function clearPendingState() {
   pendingStatusCode = null;
   pendingBackendValue = null;
@@ -269,7 +277,7 @@ function processNextInQueue() {
   });
 
   // Open Kibana (with tab ID tracking)
-  const kibanaUrl = KIBANA_URL_TEMPLATE.replace('NNNNNNNN', item.srNumber);
+  const kibanaUrl = getKibanaUrl(item.srNumber);
   chrome.tabs.create({ url: kibanaUrl, active: false }, (tab) => {
     currentKibanaTabId = tab.id;
 
@@ -312,7 +320,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
     if (lastValidSRNumber) {
       // Construct the Kibana URL with the SR number
-      const kibanaUrl = KIBANA_URL_TEMPLATE.replace('NNNNNNNN', lastValidSRNumber);
+      const kibanaUrl = getKibanaUrl(lastValidSRNumber);
 
       // Immediately update Salesforce to show "Searching..." message
       if (sourceTabId && elementId) {

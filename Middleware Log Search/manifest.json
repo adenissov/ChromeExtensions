@@ -25,7 +25,8 @@
     },
     {
       "matches": [
-        "*://portal.cc.toronto.ca/*"
+        "*://portal.cc.toronto.ca/*",
+        "*://staging.cc.toronto.ca/*"
       ],
       "js": ["error-trace-click.js"],
       "run_at": "document_idle",

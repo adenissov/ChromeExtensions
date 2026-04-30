@@ -7,8 +7,8 @@
 
   const LOG_PREFIX = '[ErrorTraceClick]';
 
-  // Only run on port 5601 (Kibana/OSD)
-  if (window.location.port !== '5601') {
+  // Only run on Kibana/OSD ports
+  if (window.location.port !== '5601' && window.location.port !== '15601') {
     return;
   }
 
@@ -30,6 +30,17 @@
     successStatusCodes: new Set([200, 202])
   };
 
+  const STAGING_CONFIG = {
+    ...CONFIG,
+    tableSelector: 'table[data-test-subj="docTable"]',
+    dataRowSelector: 'tbody tr',
+    cellValueSelector: '.osdDocTableCell__dataField',
+    statusCodeHeaderAttr: 'docTableHeader-span.attributes.http@response@status_code',
+    externalRequestIdHeaderAttr: 'docTableHeader-span.attributes.http@request@header@externalrequestid'
+  };
+
+  const ACTIVE_CONFIG = window.location.port === '15601' ? STAGING_CONFIG : CONFIG;
+
   //===========================================================================
   // COLUMN INDEX DETECTION
   //===========================================================================
@@ -40,7 +51,7 @@
    * @returns {Object|null} - { statusCodeIndex, traceIndex, backendIndex, externalRequestIdIndex } or null if required columns not found
    */
   function findColumnIndices(table) {
-    const headerRow = table.querySelector(CONFIG.headerRowSelector);
+    const headerRow = table.querySelector(ACTIVE_CONFIG.headerRowSelector);
     if (!headerRow) {
       console.log(LOG_PREFIX, 'Header row not found');
       return null;
@@ -56,13 +67,13 @@
       const span = th.querySelector('span[data-test-subj]');
       if (span) {
         const testSubj = span.getAttribute('data-test-subj');
-        if (testSubj === CONFIG.statusCodeHeaderAttr) {
+        if (testSubj === ACTIVE_CONFIG.statusCodeHeaderAttr) {
           statusCodeIndex = index;
-        } else if (testSubj === CONFIG.traceHeaderAttr) {
+        } else if (testSubj === ACTIVE_CONFIG.traceHeaderAttr) {
           traceIndex = index;
-        } else if (testSubj === CONFIG.backendHeaderAttr) {
+        } else if (testSubj === ACTIVE_CONFIG.backendHeaderAttr) {
           backendIndex = index;
-        } else if (testSubj === CONFIG.externalRequestIdHeaderAttr) {
+        } else if (testSubj === ACTIVE_CONFIG.externalRequestIdHeaderAttr) {
           externalRequestIdIndex = index;
         }
       }
@@ -94,7 +105,7 @@
    * @returns {number|null} - Parsed status code or null
    */
   function parseStatusCode(cell) {
-    const valueSpan = cell.querySelector(CONFIG.cellValueSelector);
+    const valueSpan = cell.querySelector(ACTIVE_CONFIG.cellValueSelector);
     if (!valueSpan) return null;
 
     const text = valueSpan.textContent.trim();
@@ -110,7 +121,7 @@
   function parseCellText(cell) {
     if (!cell) return '';
     // Try the standard value span first
-    const valueSpan = cell.querySelector(CONFIG.cellValueSelector);
+    const valueSpan = cell.querySelector(ACTIVE_CONFIG.cellValueSelector);
     const text = valueSpan ? valueSpan.textContent.trim() : cell.textContent.trim();
     // Kibana shows "-" for empty/null values — treat as empty
     return text === '-' ? '' : text;
@@ -128,7 +139,7 @@
    * @returns {boolean} - True if link was found and opened
    */
   function clickTraceLink(cell, statusCode, backendValue) {
-    const link = cell.querySelector(CONFIG.traceLinkSelector);
+    const link = cell.querySelector(ACTIVE_CONFIG.traceLinkSelector);
     if (link && link.href) {
       console.log(LOG_PREFIX, 'Opening trace link in background:', link.href, 'status:', statusCode, 'backend:', backendValue);
       // Send to background script to open in background tab
@@ -157,7 +168,7 @@
     const indices = findColumnIndices(table);
     if (!indices) return false;
 
-    const rows = table.querySelectorAll(CONFIG.dataRowSelector);
+    const rows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
 
     // Case 1: Empty table
     if (rows.length === 0) {
@@ -249,7 +260,7 @@
 
       const statusCode = parseStatusCode(cells[indices.statusCodeIndex]);
 
-      if (statusCode !== null && !CONFIG.successStatusCodes.has(statusCode)) {
+      if (statusCode !== null && !ACTIVE_CONFIG.successStatusCodes.has(statusCode)) {
         const backendValue = (indices.backendIndex !== -1 && cells.length > indices.backendIndex)
           ? parseCellText(cells[indices.backendIndex])
           : '';
@@ -275,9 +286,9 @@
    */
   function waitForTableAndScan() {
     // Check if table already exists with rows
-    const existingTable = document.querySelector(CONFIG.tableSelector);
+    const existingTable = document.querySelector(ACTIVE_CONFIG.tableSelector);
     if (existingTable) {
-      const rows = existingTable.querySelectorAll(CONFIG.dataRowSelector);
+      const rows = existingTable.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
       if (rows.length > 0) {
         console.log(LOG_PREFIX, 'Table already present with', rows.length, 'rows');
         scanAndClickFirstError(existingTable);
@@ -302,9 +313,9 @@
     };
 
     observer = new MutationObserver((mutations) => {
-      const table = document.querySelector(CONFIG.tableSelector);
+      const table = document.querySelector(ACTIVE_CONFIG.tableSelector);
       if (table) {
-        const rows = table.querySelectorAll(CONFIG.dataRowSelector);
+        const rows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
         if (rows.length > 0) {
           console.log(LOG_PREFIX, 'Table loaded with', rows.length, 'rows');
           cleanup();
@@ -322,7 +333,7 @@
     timeoutId = setTimeout(() => {
       console.log(LOG_PREFIX, 'Timeout waiting for table');
       cleanup();
-    }, CONFIG.observerTimeout);
+    }, ACTIVE_CONFIG.observerTimeout);
   }
 
   //===========================================================================
