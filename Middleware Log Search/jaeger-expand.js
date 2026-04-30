@@ -17,6 +17,8 @@
   let responseBodyExtracted = false;
   let extractionAttempts = 0;
   let noRecordsMessageSent = false;
+  let pageScrollDone = false;
+  let innerScrollDone = false;
   const MAX_EXTRACTION_ATTEMPTS = 5;
 
   /**
@@ -103,10 +105,26 @@
   //===========================================================================
 
   /**
+   * Recursively search for an "errorMessage" string field anywhere in obj.
+   * Returns the first non-empty string value found (DFS), or null.
+   */
+  function findErrorMessageDeep(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+    if (typeof obj.errorMessage === 'string' && obj.errorMessage) return obj.errorMessage;
+    const values = Array.isArray(obj) ? obj : Object.values(obj);
+    for (const v of values) {
+      const found = findErrorMessageDeep(v);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  /**
    * Extract payload from ByteStream O11Y trace page.
    * The page renders a JSON document as syntax-highlighted euiCodeBlock__line spans.
    * Target path: data[0]._source.events[name==="response.payload"].attributes.payload
-   * If payload is escaped JSON, returns inner.errorMessage instead.
+   * If payload is escaped JSON containing an "errorMessage" field (at any depth),
+   * returns that errorMessage value. Otherwise returns the raw payload string.
    */
   function extractPayloadFromByteStream() {
     const lines = document.querySelectorAll('.euiCodeBlock__line');
@@ -128,10 +146,10 @@
           const payload = event.attributes?.payload;
           if (!payload) continue;
 
-          // If payload is escaped JSON, pull errorMessage from it
           try {
             const inner = JSON.parse(payload);
-            if (inner.errorMessage) return inner.errorMessage;
+            const errorMsg = findErrorMessageDeep(inner);
+            if (errorMsg) return errorMsg;
           } catch (e) {}
 
           return payload;
@@ -141,6 +159,63 @@
       console.log('[Middleware Log] ByteStream JSON parse failed:', e.message);
     }
     return null;
+  }
+
+  //===========================================================================
+  // BYTESTREAM O11Y SCROLL
+  //===========================================================================
+
+  function findPayloadPanel() {
+    const titles = document.querySelectorAll('span.panel-title');
+    for (const t of titles) {
+      if (t.textContent.trim() === 'Payload') return t.closest('.euiPanel');
+    }
+    return null;
+  }
+
+  function findEventsLine(panel) {
+    const lines = panel.querySelectorAll('.euiCodeBlock__line');
+    for (const line of lines) {
+      const props = line.querySelectorAll('.token.property');
+      for (const p of props) {
+        if (p.textContent === '"events"') return line;
+      }
+    }
+    return null;
+  }
+
+  function scrollEventsToTopOfFrame(panel, eventsLine) {
+    let el = eventsLine.parentElement;
+    while (el) {
+      const s = getComputedStyle(el);
+      if ((s.overflowY === 'auto' || s.overflowY === 'scroll') &&
+          el.scrollHeight > el.clientHeight) {
+        el.scrollTop += eventsLine.getBoundingClientRect().top - el.getBoundingClientRect().top;
+        return;
+      }
+      if (el === panel) break;
+      el = el.parentElement;
+    }
+  }
+
+  function performByteStreamScroll() {
+    const panel = findPayloadPanel();
+    if (!panel) return;
+
+    if (!pageScrollDone) {
+      panel.scrollIntoView({ block: 'start' });
+      pageScrollDone = true;
+      // Bound the wait for "events": stop retrying after 5 s
+      setTimeout(() => { innerScrollDone = true; }, 5000);
+    }
+
+    if (innerScrollDone) return;
+
+    const eventsLine = findEventsLine(panel);
+    if (!eventsLine) return;
+
+    scrollEventsToTopOfFrame(panel, eventsLine);
+    innerScrollDone = true;
   }
 
   /**
@@ -287,6 +362,9 @@
       expandSpanBar();
     }, 500);
 
+    // Initial attempt at ByteStream scroll (in case content is already rendered)
+    setTimeout(performByteStreamScroll, 500);
+
     // After 10 seconds, if no data extracted, show "No records"
     setTimeout(() => {
       if (!responseBodyExtracted && !noRecordsMessageSent) {
@@ -334,8 +412,9 @@
         setTimeout(expandLogsAccordions, 100);
       }
 
-      if (shouldAttemptExtraction && !responseBodyExtracted) {
-        setTimeout(attemptExtraction, 200);
+      if (shouldAttemptExtraction) {
+        if (!responseBodyExtracted) setTimeout(attemptExtraction, 200);
+        if (!innerScrollDone) setTimeout(performByteStreamScroll, 200);
       }
     });
 

@@ -281,7 +281,8 @@ function processNextInQueue() {
   chrome.tabs.create({ url: kibanaUrl, active: false }, (tab) => {
     currentKibanaTabId = tab.id;
 
-    // Set timeout for this item (12 seconds - fallback after 10-second Jaeger timeout)
+    // Per-item timeout. Generous to accommodate ByteStream OSD pages, which load
+    // slowly when many tabs queue up and Chrome throttles background tabs.
     const timeoutSrNumber = item.srNumber;
     setTimeout(() => {
       if (isProcessingQueue && currentSearchIndex < searchQueue.length) {
@@ -305,7 +306,7 @@ function processNextInQueue() {
           processNextInQueue();
         }
       }
-    }, 12000);
+    }, 30000);
   });
 }
 
