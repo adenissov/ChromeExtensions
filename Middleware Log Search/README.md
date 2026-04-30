@@ -1,217 +1,86 @@
 # 311 Middleware Log Search
 
-Chrome extension for City of Toronto 311 staff to search middleware logs directly from Salesforce.
+A Chrome extension that lets City of Toronto 311 staff look up middleware-log results for any Service Request (SR) directly from a Salesforce list — without copying numbers into Kibana.
 
-## Features
+## What it does
 
-| Feature | Description |
-|---------|-------------|
-| **Search this SR** | Right-click an SR number → search middleware logs in Kibana |
-| **Search All SRs** | Right-click in SR column → batch process all SRs on the page |
-| **Auto Error Detection** | Automatically finds HTTP errors (≥300) in Kibana |
-| **Auto Trace Expansion** | Automatically expands Jaeger trace to show error details |
-| **Visual Feedback** | Spinner animation while searching, results displayed in-place |
+Right-click an SR number on a Salesforce list view and the extension will:
+1. Open the corresponding Kibana / OSD dashboard in a background tab
+2. Find the most recent error row in the middleware-log table
+3. Open the Trace link for that row
+4. Pull the error message out of the trace page and display it inline next to the SR number on Salesforce
 
-## Workflow
-
-```
-SALESFORCE          KIBANA              JAEGER
-    │                  │                   │
-    │ Right-click SR   │                   │
-    │ ──────────────►  │                   │
-    │                  │ Auto-find error   │
-    │                  │ ───────────────►  │
-    │                  │                   │ Auto-expand trace
-    │ ◄──────────────────────────────────  │ Extract response.body
-    │ Display error                        │
-```
+You stay on Salesforce. The extension does the navigating, scrolling, and reading for you.
 
 ## Installation
 
 1. Open `chrome://extensions/` (or `edge://extensions/`)
-2. Enable **Developer mode**
+2. Turn on **Developer mode** (top right)
 3. Click **Load unpacked**
 4. Select the `Middleware Log Search` folder
 
 ## Usage
 
-### Single SR Search
-1. Right-click on an SR number link (8-9 digits) in Salesforce
-2. Select **"Search this SR in Middleware Log"**
-3. Results appear in the SR cell:
-   - Error message from middleware
-   - "Waiting for a BackEnd ID..." (no HTTP errors found)
-   - "No records in Middleware log" (SR not in logs)
+### Search a single SR
+- Right-click an SR number link (8–9 digits) in any Salesforce list
+- Choose **"Search this SR in Middleware Log"**
+- Wait a few seconds; the result replaces the SR-cell text
 
-### Batch Search (All SRs)
-1. Right-click anywhere in the Request Number column
-2. Select **"Search All SRs in Middleware Log"**
-3. All SRs process sequentially (bottom to top)
-4. Results appear in each cell as processing completes
+### Batch search a whole column
+- Right-click anywhere in the SR (Request Number) column
+- Choose **"Search All SRs in Middleware Log"**
+- The extension processes the SRs one at a time, bottom to top
+- Each cell updates as its own result comes back
 
----
+You can keep working on Salesforce while batch mode runs in the background.
 
-## Project Structure
+### What the result text means
 
-```
-Middleware Log Search/
-├── manifest.json           # Extension configuration
-├── background.js           # Service worker: menus, routing, queue
-├── content.js              # Salesforce: SR detection, display updates
-├── error-trace-click.js    # Kibana: auto-click error traces
-├── jaeger-expand.js        # Jaeger: auto-expand, extract response.body
-├── images/                 # Extension icons
-└── README.md               # This file
-```
+| Display | Meaning |
+|---|---|
+| `09234731 - ⟳ Searching in the Middleware log...` | Search in progress |
+| `09234731 - (Backend=MAXIMO, Status=200) Sent request to back-end` | Successful round-trip |
+| `09234731 - (Backend=MAXIMO, Status=202) Back-end Id received: CSROWR-12` | Successful, async-acknowledged |
+| `09234731 - (Backend=MAXIMO, Status=400) Error 400: BMXAA4121E - …` | Error found; full message included |
+| `09234731 - No records in the Middleware log` | SR not present in any log entry |
+| `09234731 - (Backend=MAXIMO, Status=400) Jaeger extraction timed out` | Result page took too long to load; try the SR again |
 
-## File Responsibilities
+### Hint tips on common errors
 
-| File | Runs On | Purpose |
-|------|---------|---------|
-| `background.js` | Service worker | Context menus, tab management, message routing |
-| `content.js` | Salesforce (`*.salesforce.com`, `*.force.com`) | SR validation, display updates, table reflow |
-| `error-trace-click.js` | Kibana (`portal.cc.toronto.ca:5601`) | Scan for HTTP errors, click trace links |
-| `jaeger-expand.js` | All URLs (filters internally) | Expand accordions, extract `response.body` |
+For a few well-known patterns, the extension appends a one-line hint:
 
----
+| Backend / Status | Pattern in response | Tip appended |
+|---|---|---|
+| `IBMS / 445` | "Neither RequestNumber nor ExternalRequestID found" | Check Integration Request for validation errors |
+| `IBMS / 445` | "NO DATA FOUND for some values associated with" | Likely missing Ward number for this GeoID in the IBMS location DB |
+| `MAXIMO / 500` | "object has no attribute" | Check Integration Request for validation errors |
 
-## Configuration
+## Two log locations — picked automatically
 
-### Timeouts
+311 migrated the middleware logs from a legacy stack to a new dashboard partway through the SR number range. The extension routes each SR to the right place based on its number:
 
-| Location | Value | Purpose |
-|----------|-------|---------|
-| `jaeger-expand.js` | 10 sec | Max wait for Jaeger data extraction |
-| `background.js` | 12 sec | Fallback timeout per SR (queue mode) |
-| `error-trace-click.js` | 10 sec | Max wait for Kibana table to load |
-| `jaeger-expand.js` | 5 min | MutationObserver auto-disconnect |
+- **SR ≤ 09227488** → legacy Kibana at `portal.cc.toronto.ca:5601`
+- **SR > 09227488** → new ByteStream O11Y dashboard at `staging.cc.toronto.ca:15601`
 
-### URLs
+You don't pick — it just works.
 
-| System | URL Pattern |
-|--------|-------------|
-| Kibana | `http://portal.cc.toronto.ca:5601/app/dashboards#/view/...` |
-| Jaeger | Detected by URL containing `jaeger`, `trace`, `tracing`, or port `16686` |
-| Salesforce | `*.salesforce.com`, `*.force.com`, `*.lightning.force.com` |
+## Trace page auto-scroll (new dashboard only)
 
-### Thresholds
+When you (or the extension) opens a Trace link on the new staging dashboard, the trace page auto-scrolls so the data you actually want is visible without manual scrolling:
+1. The **Payload** panel sits at the top of the viewport
+2. Inside the panel, the `"events":` key sits at the top of the JSON code block
 
-| Setting | Value |
-|---------|-------|
-| HTTP Error Threshold | Status Code ≥ 300 |
-| SR Number Pattern | 8-9 digit integer |
+If the trace genuinely has no `events` element, only step 1 happens.
 
----
+## Troubleshooting
 
-## Message Protocol
+| Symptom | Try |
+|---|---|
+| Right-click does nothing on an SR | Refresh the Salesforce page; the extension was probably reloaded |
+| "Jaeger extraction timed out" repeats in batch mode | Re-run; the staging dashboard can be slow when many background tabs queue up |
+| Result never appears | Confirm the SR number is 8 or 9 digits; the validator only accepts those |
+| Wrong dashboard opens | The cutoff is `09227488` — anything above goes to staging, anything at-or-below goes to legacy |
 
-### Content Script → Background
+## For developers
 
-| Action | Sent By | Data |
-|--------|---------|------|
-| `updateMenuState` | content.js | `{isValid, srNumber, elementId, isValidColumn, allItems}` |
-| `openInBackground` | error-trace-click.js | `{url}` |
-| `noErrorsFound` | error-trace-click.js | (no data) |
-| `noRecordsFound` | error-trace-click.js | (no data) |
-| `responseBodyExtracted` | jaeger-expand.js | `{responseBody}` |
-
-### Background → Content Script
-
-| Action | Data |
-|--------|------|
-| `updateSRDisplay` | `{elementId, srNumber, responseBody}` |
-
----
-
-## Known Issues & Solutions
-
-### 1. Salesforce Table Reflow
-
-**Problem:** After adding error text, table rows expand but container height stays fixed, clipping bottom rows.
-
-**Solution:** CSS overrides + adding class to 5 levels of parent containers:
-```javascript
-// In content.js - triggerSalesforceTableReflow()
-let parent = tableElement.parentElement;
-for (let i = 0; i < 5 && parent; i++) {
-  parent.classList.add('mwlog-expanded-table-container');
-  parent = parent.parentElement;
-}
-```
-
-**What didn't work:**
-- Width manipulation (changing by 1px)
-- Window resize event alone
-
-### 2. Jaeger Page Detection
-
-**Problem:** `jaeger-expand.js` runs on ALL URLs but should only act on Jaeger pages.
-
-**Solution:** Multiple checks in `isJaegerPage()`:
-- URL contains `jaeger`, `/trace/`, `tracing`, `16686`, or `zipkin`
-- DOM contains Jaeger-specific elements (`.TraceTimelineViewer`, `.TracePage`, etc.)
-- Extraction was attempted (found Jaeger-like elements)
-
-**Gotcha:** Only run in top frame (`window !== window.top`) to avoid duplicates from iframes.
-
-### 3. Empty vs No Errors in Kibana
-
-**Problem:** Need to distinguish between:
-- Table has records but no HTTP errors → "Waiting for a BackEnd ID..."
-- Table is completely empty → "No records in Middleware log"
-
-**Solution:** Check `rows.length === 0` BEFORE scanning for errors.
-
-### 4. Extension Context Invalidation
-
-**Problem:** After extension reload, content scripts lose connection to background.
-
-**Solution:** Wrap `chrome.runtime.sendMessage` in try-catch with user-friendly message to refresh the page.
-
----
-
-## Development Notes
-
-### Adding New Features
-
-1. **New message types**: Add handler in `background.js` message listener
-2. **New display states**: Update `content.js` message handler and CSS
-3. **New Kibana columns**: Update `CONFIG` in `error-trace-click.js`
-4. **New Jaeger elements**: Update selectors in `jaeger-expand.js`
-
-### Common Pitfalls
-
-| Pitfall | Solution |
-|---------|----------|
-| Context menu not updating | Menu items are created once on install; use `chrome.contextMenus.update()` |
-| Content script not running | Check `matches` patterns in `manifest.json` |
-| Jaeger script runs on wrong pages | Ensure `isJaegerPage()` check is in place |
-| Duplicate messages | Check for `window !== window.top` (iframe filter) |
-| Unreachable code | Early returns can make later checks unreachable (see error-trace-click.js fix) |
-
-### Debugging
-
-Filter console by prefix:
-- `[Middleware Log]` - content.js, jaeger-expand.js, background.js
-- `[ErrorTraceClick]` - error-trace-click.js
-
-### Testing Checklist
-
-- [ ] Single SR search works
-- [ ] Search All processes all SRs
-- [ ] Empty Kibana table shows "No records"
-- [ ] No errors shows "Waiting for BackEnd ID"
-- [ ] Errors show extracted message
-- [ ] Spinner animation appears during search
-- [ ] Table reflows correctly after update
-- [ ] Extension works after page refresh
-- [ ] Context menu disabled for non-SR elements
-
----
-
-## Version History
-
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | Jan 2026 | Initial release |
-| 1.1 | Feb 2026 | Added Search All, visual feedback, table reflow fix |
+Design choices, message protocol, timeout reasoning, and known limitations are in [`ARCHITECTURE.md`](ARCHITECTURE.md).
