@@ -102,24 +102,26 @@ function updateSRDisplay(responseBody) {
 
 // Create context menu items when extension is installed
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: 'middlewareLogSearch',
-    title: 'Search this SR in Middleware Log',
-    contexts: ['all'],
-    enabled: false  // Disabled by default until valid SR detected
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: 'middlewareLogSearch',
+      title: 'Search this SR in Middleware Log',
+      contexts: ['all'],
+      enabled: false  // Disabled by default until valid SR detected
+    });
+    chrome.contextMenus.create({
+      id: 'separator',
+      type: 'separator',
+      contexts: ['all']
+    });
+    chrome.contextMenus.create({
+      id: 'middlewareLogSearchAll',
+      title: 'Search All SRs in Middleware Log',
+      contexts: ['all'],
+      enabled: false  // Disabled by default until in Request Number column
+    });
+    console.log('[Middleware Log] Context menus created (disabled by default)');
   });
-  chrome.contextMenus.create({
-    id: 'separator',
-    type: 'separator',
-    contexts: ['all']
-  });
-  chrome.contextMenus.create({
-    id: 'middlewareLogSearchAll',
-    title: 'Search All SRs in Middleware Log',
-    contexts: ['all'],
-    enabled: false  // Disabled by default until in Request Number column
-  });
-  console.log('[Middleware Log] Context menus created (disabled by default)');
 });
 
 //=============================================================================

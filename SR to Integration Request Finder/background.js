@@ -6,15 +6,16 @@
 // CONTEXT MENU SETUP
 //=============================================================================
 
-// Create context menu item when extension is installed
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: 'searchIntegrationRequest',
-    title: 'SR Search in_Integration Requests',
-    contexts: ['all'],  // Show on all contexts, control via enabled state
-    enabled: false      // Disabled by default until valid SR detected
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: 'searchIntegrationRequest',
+      title: 'SR Search in_Integration Requests',
+      contexts: ['all'],
+      enabled: false
+    });
+    console.log('[IR Finder] Context menu created (disabled by default)');
   });
-  console.log('[IR Finder] Context menu created (disabled by default)');
 });
 
 //=============================================================================

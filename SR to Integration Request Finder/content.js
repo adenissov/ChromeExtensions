@@ -100,15 +100,16 @@ document.addEventListener('contextmenu', (event) => {
   }
 
   // Send validation result to background script to enable/disable menu
-  chrome.runtime.sendMessage({
-    action: 'updateMenuState',
-    isValid: isValidSR,
-    isLink: isLink,
-    srNumber: srNumber
-  }).catch(err => {
-    // Ignore errors (e.g., if background script not ready)
-    console.log('[IR Finder] Could not send menu state update:', err.message);
-  });
+  try {
+    chrome.runtime.sendMessage({
+      action: 'updateMenuState',
+      isValid: isValidSR,
+      isLink: isLink,
+      srNumber: srNumber
+    }).catch(() => {});
+  } catch {
+    // Extension context invalidated (extension reloaded while page is open)
+  }
 });
 
 //=============================================================================
