@@ -357,12 +357,21 @@
     });
 
     // Safety-net timeout: if neither the table nor the empty-state panel ever
-    // appears, report no records so the Salesforce cell doesn't stay stuck on
-    // the searching spinner.
+    // appears on a dashboard, report no records so the Salesforce cell doesn't
+    // stay stuck on the searching spinner. Gated by a dashboard-only DOM marker
+    // because OSD trace pages share host:port with the dashboard — without this
+    // guard, the safety-net would falsely fire from the trace tab ~10 s after a
+    // successful single-SR search and overwrite the correct error text.
     timeoutId = setTimeout(() => {
-      console.log(LOG_PREFIX, 'Timeout waiting for table - reporting no records');
       cleanup();
-      chrome.runtime.sendMessage({ action: 'noRecordsFound' });
+      const onDashboard = !!document.querySelector('[data-test-subj="dashboardViewport"]') ||
+                          !!document.querySelector('.dshAppContainer');
+      if (onDashboard) {
+        console.log(LOG_PREFIX, 'Timeout waiting for table - reporting no records');
+        chrome.runtime.sendMessage({ action: 'noRecordsFound' });
+      } else {
+        console.log(LOG_PREFIX, 'Timeout waiting for table - not a dashboard, suppressing');
+      }
     }, ACTIVE_CONFIG.observerTimeout);
   }
 
