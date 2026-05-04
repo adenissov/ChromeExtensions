@@ -26,6 +26,7 @@
     externalRequestIdHeaderAttr: 'docTableHeader-External Request ID',
     cellValueSelector: 'span[ng-non-bindable]',
     traceLinkSelector: 'a[href]',
+    noResultsSelector: null,  // legacy empty-state DOM not verified; safety-net timeout still fires
     observerTimeout: 10000,  // 10 seconds max wait for table
     successStatusCodes: new Set([200, 202])
   };
@@ -36,7 +37,8 @@
     dataRowSelector: 'tbody tr',
     cellValueSelector: '.osdDocTableCell__dataField',
     statusCodeHeaderAttr: 'docTableHeader-span.attributes.http@response@status_code',
-    externalRequestIdHeaderAttr: 'docTableHeader-span.attributes.http@request@header@externalrequestid'
+    externalRequestIdHeaderAttr: 'docTableHeader-span.attributes.http@request@header@externalrequestid',
+    noResultsSelector: '[data-test-subj="embeddedSavedSearchDocTable"] .visError'
   };
 
   const ACTIVE_CONFIG = window.location.port === '15601' ? STAGING_CONFIG : CONFIG;
@@ -282,9 +284,27 @@
   //===========================================================================
 
   /**
+   * Detect the OSD "No results found" empty-state panel.
+   * When the search returns nothing, the dashboard renders a .visError block
+   * inside the Discover panel container and never creates the data table.
+   */
+  function hasNoResultsState() {
+    if (!ACTIVE_CONFIG.noResultsSelector) return false;
+    return !!document.querySelector(ACTIVE_CONFIG.noResultsSelector);
+  }
+
+  /**
    * Wait for table to appear and have data rows, then scan
    */
   function waitForTableAndScan() {
+    // Empty-state shortcut: if the dashboard already shows "No results found",
+    // there will never be a table — report immediately.
+    if (hasNoResultsState()) {
+      console.log(LOG_PREFIX, 'Empty-state panel already present - reporting no records');
+      chrome.runtime.sendMessage({ action: 'noRecordsFound' });
+      return;
+    }
+
     // Check if table already exists with rows
     const existingTable = document.querySelector(ACTIVE_CONFIG.tableSelector);
     if (existingTable) {
@@ -313,6 +333,13 @@
     };
 
     observer = new MutationObserver((mutations) => {
+      if (hasNoResultsState()) {
+        console.log(LOG_PREFIX, 'Empty-state panel appeared - reporting no records');
+        cleanup();
+        chrome.runtime.sendMessage({ action: 'noRecordsFound' });
+        return;
+      }
+
       const table = document.querySelector(ACTIVE_CONFIG.tableSelector);
       if (table) {
         const rows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
@@ -329,10 +356,13 @@
       subtree: true
     });
 
-    // Timeout after configured duration
+    // Safety-net timeout: if neither the table nor the empty-state panel ever
+    // appears, report no records so the Salesforce cell doesn't stay stuck on
+    // the searching spinner.
     timeoutId = setTimeout(() => {
-      console.log(LOG_PREFIX, 'Timeout waiting for table');
+      console.log(LOG_PREFIX, 'Timeout waiting for table - reporting no records');
       cleanup();
+      chrome.runtime.sendMessage({ action: 'noRecordsFound' });
     }, ACTIVE_CONFIG.observerTimeout);
   }
 
