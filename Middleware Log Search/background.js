@@ -31,6 +31,13 @@ let isProcessingQueue = false;
 let currentKibanaTabId = null;
 let currentJaegerTabId = null;
 
+// Tab IDs whose batch was cancelled — late messages from these tabs are ignored
+const cancelledTabIds = new Set();
+
+// In-progress single-SR search context. Null when no single-SR is running.
+// Shape: { srNumber, sourceTabId, elementId, kibanaTabId, jaegerTabId }
+let activeSingleSR = null;
+
 // Status code and backend value of the current error being traced (for prepending to Jaeger result)
 let pendingStatusCode = null;
 let pendingBackendValue = null;
@@ -130,6 +137,13 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Listen for validation results from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Drop messages from tabs whose batch was cancelled (Kibana/Jaeger tabs only;
+  // Salesforce tabs are never added to cancelledTabIds, so updateMenuState passes).
+  if (sender.tab?.id && cancelledTabIds.has(sender.tab.id)) {
+    console.log('[Middleware Log] Ignoring message from cancelled tab:', sender.tab.id, message.action);
+    return;
+  }
+
   if (message.action === 'updateMenuState') {
     // Store the SR number and source tab info for later use
     if (message.isValid && message.srNumber) {
@@ -144,17 +158,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sourceTabId = sender.tab?.id;
     }
 
-    // Update single-SR context menu enabled state
-    // Disable if queue is processing
+    // Update single-SR context menu enabled state.
+    // Stays enabled during a batch — clicking it cancels the batch (see cancelQueue).
     chrome.contextMenus.update('middlewareLogSearch', {
-      enabled: message.isValid && !isProcessingQueue
+      enabled: message.isValid
     });
 
-    // Update "Search All" context menu state
+    // Update "Search All" context menu state — also stays enabled during a batch.
     if (message.isValidColumn && message.allItems && message.allItems.length > 0) {
       pendingAllItems = message.allItems;
       chrome.contextMenus.update('middlewareLogSearchAll', {
-        enabled: !isProcessingQueue
+        enabled: true
       });
       console.log('[Middleware Log] Search All menu enabled with', pendingAllItems.length, 'items');
     } else {
@@ -174,6 +188,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.tabs.create({ url: message.url, active: false }, (tab) => {
       if (isProcessingQueue) {
         currentJaegerTabId = tab.id;
+      } else if (activeSingleSR) {
+        activeSingleSR.jaegerTabId = tab.id;
       }
     });
   }
@@ -182,6 +198,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'statusResult') {
     console.log('[Middleware Log] Status result:', message.statusCode, message.displayText);
     updateSRDisplay(message.displayText);
+    clearActiveSingleSRIfFromIt(sender.tab?.id);
     advanceQueueIfProcessing();
   }
 
@@ -189,6 +206,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'noRecordsFound') {
     console.log('[Middleware Log] No records found in Kibana');
     updateSRDisplay('No records in the Middleware log');
+    clearActiveSingleSRIfFromIt(sender.tab?.id);
     advanceQueueIfProcessing();
   }
 
@@ -219,6 +237,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     clearPendingState();
+    clearActiveSingleSRIfFromIt(sender.tab?.id);
     advanceQueueIfProcessing();
   }
 });
@@ -239,6 +258,84 @@ function cleanupCurrentTabs() {
     chrome.tabs.remove(currentKibanaTabId).catch(() => {});
     currentKibanaTabId = null;
   }
+}
+
+/**
+ * Cancel an in-progress single-SR search. Mirrors cancelQueue but for the
+ * single-SR mode: marks tabs as cancelled, shows "Search cancelled" on the
+ * cell, closes tabs, clears activeSingleSR. Safe to call when no single-SR
+ * is in progress.
+ */
+function cancelSingleSR() {
+  if (!activeSingleSR) return;
+
+  console.log('[Middleware Log] Cancelling single-SR search for', activeSingleSR.srNumber);
+
+  if (activeSingleSR.kibanaTabId) cancelledTabIds.add(activeSingleSR.kibanaTabId);
+  if (activeSingleSR.jaegerTabId) cancelledTabIds.add(activeSingleSR.jaegerTabId);
+
+  if (activeSingleSR.sourceTabId) {
+    chrome.tabs.sendMessage(activeSingleSR.sourceTabId, {
+      action: 'updateSRDisplay',
+      elementId: activeSingleSR.elementId,
+      srNumber: activeSingleSR.srNumber,
+      responseBody: 'Search cancelled'
+    }).catch(() => {});
+  }
+
+  if (activeSingleSR.jaegerTabId) {
+    chrome.tabs.remove(activeSingleSR.jaegerTabId).catch(() => {});
+  }
+  if (activeSingleSR.kibanaTabId) {
+    chrome.tabs.remove(activeSingleSR.kibanaTabId).catch(() => {});
+  }
+
+  activeSingleSR = null;
+}
+
+/**
+ * Clear activeSingleSR if the message that just arrived is from one of its
+ * tabs (i.e. its search just completed). No-op otherwise.
+ */
+function clearActiveSingleSRIfFromIt(senderTabId) {
+  if (!activeSingleSR || !senderTabId) return;
+  if (senderTabId === activeSingleSR.kibanaTabId || senderTabId === activeSingleSR.jaegerTabId) {
+    activeSingleSR = null;
+  }
+}
+
+/**
+ * Cancel an in-progress "Search All" batch. Called when the user clicks
+ * either context-menu item while a batch is running. Marks the current
+ * Kibana/Jaeger tabs so any in-flight messages from them are dropped,
+ * shows "Search cancelled" on the in-progress item's cell, closes the
+ * tabs, and resets queue state. Safe to call when no batch is running.
+ */
+function cancelQueue() {
+  if (!isProcessingQueue) return;
+
+  console.log('[Middleware Log] Cancelling Search All queue');
+
+  if (currentKibanaTabId) cancelledTabIds.add(currentKibanaTabId);
+  if (currentJaegerTabId) cancelledTabIds.add(currentJaegerTabId);
+
+  const currentItem = currentSearchIndex >= 0 && currentSearchIndex < searchQueue.length
+    ? searchQueue[currentSearchIndex]
+    : null;
+  if (currentItem && sourceTabId) {
+    chrome.tabs.sendMessage(sourceTabId, {
+      action: 'updateSRDisplay',
+      elementId: currentItem.elementId,
+      srNumber: currentItem.srNumber,
+      responseBody: 'Search cancelled'
+    }).catch(() => {});
+  }
+
+  isProcessingQueue = false;
+  searchQueue = [];
+  currentSearchIndex = -1;
+  cleanupCurrentTabs();
+  clearPendingState();
 }
 
 //=============================================================================
@@ -322,6 +419,9 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     console.log('[Middleware Log] Menu clicked, SR number:', lastValidSRNumber);
 
     if (lastValidSRNumber) {
+      cancelSingleSR();
+      cancelQueue();
+
       // Construct the Kibana URL with the SR number
       const kibanaUrl = getKibanaUrl(lastValidSRNumber);
 
@@ -337,8 +437,20 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
         });
       }
 
-      // Open in new background tab (keep Salesforce tab on top)
-      chrome.tabs.create({ url: kibanaUrl, active: false });
+      // Open in new background tab (keep Salesforce tab on top) and remember
+      // its context so a subsequent click can cancel it cleanly.
+      const startedSrNumber = lastValidSRNumber;
+      const startedSourceTabId = sourceTabId;
+      const startedElementId = elementId;
+      chrome.tabs.create({ url: kibanaUrl, active: false }, (tab) => {
+        activeSingleSR = {
+          srNumber: startedSrNumber,
+          sourceTabId: startedSourceTabId,
+          elementId: startedElementId,
+          kibanaTabId: tab.id,
+          jaegerTabId: null
+        };
+      });
       console.log('[Middleware Log] Opening Kibana URL for SR:', lastValidSRNumber);
     } else {
       console.log('[Middleware Log] No SR number available');
@@ -347,15 +459,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
   // Handle "Search All" in column
   if (info.menuItemId === 'middlewareLogSearchAll') {
-    if (isProcessingQueue) {
-      console.log('[Middleware Log] Already processing queue, ignoring click');
-      return;
-    }
-
     if (pendingAllItems.length === 0) {
       console.log('[Middleware Log] No items to process');
       return;
     }
+
+    cancelSingleSR();
+    cancelQueue();
 
     // Initialize queue
     searchQueue = [...pendingAllItems];
