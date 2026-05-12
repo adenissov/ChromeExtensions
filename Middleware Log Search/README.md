@@ -54,6 +54,7 @@ For a few well-known patterns, the extension appends a one-line hint:
 | `IBMS / 445` | "Neither RequestNumber nor ExternalRequestID found" | Check Integration Request for validation errors |
 | `IBMS / 445` | "NO DATA FOUND for some values associated with" | Likely missing Ward number for this GeoID in the IBMS location DB |
 | `MAXIMO / 500` | "object has no attribute" | Check Integration Request for validation errors |
+| any | "can not find match externalRequestId for requestNumber" | Check Integration Request for validation errors |
 
 ## Two log locations — picked automatically
 

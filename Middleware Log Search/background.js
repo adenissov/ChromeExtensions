@@ -231,6 +231,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           message.responseBody.includes('object has no attribute')) {
         displayText += TIP_CHECK_INTEGRATION_REQUEST;
       }
+      if (message.responseBody.includes('can not find match externalRequestId for requestNumber')) {
+        displayText += TIP_CHECK_INTEGRATION_REQUEST;
+      }
       updateSRDisplay(displayText);
     } else {
       console.log('[Middleware Log] Missing response body');
