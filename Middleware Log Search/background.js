@@ -11,6 +11,7 @@ const SR_THRESHOLD = 9227488;
 
 const TIP_CHECK_INTEGRATION_REQUEST = ' ✅Tip:Check Integration Request for validation errors';
 const TIP_IBMS_LOCATION_DB = ' ✅Tip: Error in the IBMS location database (likely missing Ward number for this GeoID)';
+const TRACE_EXTRACTION_TIMEOUT_MS = 30000;
 
 //=============================================================================
 // STATE
@@ -35,7 +36,7 @@ let currentJaegerTabId = null;
 const cancelledTabIds = new Set();
 
 // In-progress single-SR search context. Null when no single-SR is running.
-// Shape: { srNumber, sourceTabId, elementId, kibanaTabId, jaegerTabId }
+// Shape: { srNumber, sourceTabId, elementId, kibanaTabId, jaegerTabId, traceTimeoutId }
 let activeSingleSR = null;
 
 // Status code and backend value of the current error being traced (for prepending to Jaeger result)
@@ -101,6 +102,43 @@ function updateSRDisplay(responseBody) {
   }).catch(error => {
     console.log('[Middleware Log] Failed to update SR display:', error.message);
   });
+}
+
+function startSingleSRTraceTimeout() {
+  if (!activeSingleSR) return;
+
+  const timeoutContext = activeSingleSR;
+  clearTimeout(timeoutContext.traceTimeoutId);
+
+  timeoutContext.traceTimeoutId = setTimeout(() => {
+    if (activeSingleSR !== timeoutContext) return;
+
+    console.log('[Middleware Log] Single-SR trace extraction timed out for SR:', timeoutContext.srNumber);
+
+    let timeoutMessage = 'Jaeger extraction timed out';
+    if (pendingStatusCode !== null) {
+      timeoutMessage = formatStatusPrefix(pendingBackendValue, pendingStatusCode) + timeoutMessage;
+    }
+
+    chrome.tabs.sendMessage(timeoutContext.sourceTabId, {
+      action: 'updateSRDisplay',
+      elementId: timeoutContext.elementId,
+      srNumber: timeoutContext.srNumber,
+      responseBody: timeoutMessage
+    }).catch(() => {});
+
+    if (timeoutContext.jaegerTabId) {
+      cancelledTabIds.add(timeoutContext.jaegerTabId);
+      chrome.tabs.remove(timeoutContext.jaegerTabId).catch(() => {});
+    }
+    if (timeoutContext.kibanaTabId) {
+      cancelledTabIds.add(timeoutContext.kibanaTabId);
+      chrome.tabs.remove(timeoutContext.kibanaTabId).catch(() => {});
+    }
+
+    clearPendingState();
+    activeSingleSR = null;
+  }, TRACE_EXTRACTION_TIMEOUT_MS);
 }
 
 //=============================================================================
@@ -190,6 +228,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         currentJaegerTabId = tab.id;
       } else if (activeSingleSR) {
         activeSingleSR.jaegerTabId = tab.id;
+        startSingleSRTraceTimeout();
       }
     });
   }
@@ -213,6 +252,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Handle response body extracted from Jaeger
   if (message.action === 'responseBodyExtracted') {
     console.log('[Middleware Log] Received response body:', message.responseBody);
+
+    if (message.responseBody === 'No records in the Middleware log') {
+      console.log('[Middleware Log] Ignoring legacy trace-page no-records fallback from tab:', sender.tab?.id);
+      return;
+    }
 
     if (message.responseBody) {
       let displayText = message.responseBody;
@@ -286,6 +330,8 @@ function cancelSingleSR() {
     }).catch(() => {});
   }
 
+  clearTimeout(activeSingleSR.traceTimeoutId);
+
   if (activeSingleSR.jaegerTabId) {
     chrome.tabs.remove(activeSingleSR.jaegerTabId).catch(() => {});
   }
@@ -303,6 +349,7 @@ function cancelSingleSR() {
 function clearActiveSingleSRIfFromIt(senderTabId) {
   if (!activeSingleSR || !senderTabId) return;
   if (senderTabId === activeSingleSR.kibanaTabId || senderTabId === activeSingleSR.jaegerTabId) {
+    clearTimeout(activeSingleSR.traceTimeoutId);
     activeSingleSR = null;
   }
 }
@@ -451,7 +498,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
           sourceTabId: startedSourceTabId,
           elementId: startedElementId,
           kibanaTabId: tab.id,
-          jaegerTabId: null
+          jaegerTabId: null,
+          traceTimeoutId: null
         };
       });
       console.log('[Middleware Log] Opening Kibana URL for SR:', lastValidSRNumber);

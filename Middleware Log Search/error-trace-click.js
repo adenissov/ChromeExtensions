@@ -27,7 +27,8 @@
     cellValueSelector: 'span[ng-non-bindable]',
     traceLinkSelector: 'a[href]',
     noResultsSelector: null,  // legacy empty-state DOM not verified; safety-net timeout still fires
-    observerTimeout: 10000,  // 10 seconds max wait for table
+    observerTimeout: 25000,  // keep below background queue timeout
+    noResultsStabilityMs: 3000,
     successStatusCodes: new Set([200, 202])
   };
 
@@ -293,33 +294,33 @@
     return !!document.querySelector(ACTIVE_CONFIG.noResultsSelector);
   }
 
+  function getLoadedTable() {
+    const table = document.querySelector(ACTIVE_CONFIG.tableSelector);
+    if (!table) return null;
+
+    const rows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
+    return rows.length > 0 ? table : null;
+  }
+
   /**
    * Wait for table to appear and have data rows, then scan
    */
   function waitForTableAndScan() {
-    // Empty-state shortcut: if the dashboard already shows "No results found",
-    // there will never be a table — report immediately.
-    if (hasNoResultsState()) {
-      console.log(LOG_PREFIX, 'Empty-state panel already present - reporting no records');
-      chrome.runtime.sendMessage({ action: 'noRecordsFound' });
-      return;
-    }
-
-    // Check if table already exists with rows
-    const existingTable = document.querySelector(ACTIVE_CONFIG.tableSelector);
+    // Check if table already exists with rows.
+    const existingTable = getLoadedTable();
     if (existingTable) {
       const rows = existingTable.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
-      if (rows.length > 0) {
-        console.log(LOG_PREFIX, 'Table already present with', rows.length, 'rows');
-        scanAndClickFirstError(existingTable);
-        return;
-      }
+      console.log(LOG_PREFIX, 'Table already present with', rows.length, 'rows');
+      scanAndClickFirstError(existingTable);
+      return;
     }
 
     console.log(LOG_PREFIX, 'Waiting for table to load...');
 
     let observer = null;
     let timeoutId = null;
+    let noResultsTimerId = null;
+    let noResultsReason = null;
 
     const cleanup = () => {
       if (observer) {
@@ -330,24 +331,56 @@
         clearTimeout(timeoutId);
         timeoutId = null;
       }
+      if (noResultsTimerId) {
+        clearTimeout(noResultsTimerId);
+        noResultsTimerId = null;
+      }
     };
 
+    const scheduleNoResultsReport = (reason) => {
+      if (!ACTIVE_CONFIG.noResultsSelector || noResultsTimerId) return;
+
+      noResultsReason = reason;
+      console.log(LOG_PREFIX, 'Empty-state panel seen; waiting to confirm no records. Reason:', reason);
+
+      noResultsTimerId = setTimeout(() => {
+        noResultsTimerId = null;
+
+        const table = getLoadedTable();
+        if (table) {
+          const rows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
+          console.log(LOG_PREFIX, 'Empty-state was transient; table now has', rows.length, 'rows');
+          cleanup();
+          scanAndClickFirstError(table);
+          return;
+        }
+
+        if (hasNoResultsState()) {
+          console.log(LOG_PREFIX, 'Empty-state remained stable - reporting no records. Reason:', noResultsReason);
+          cleanup();
+          chrome.runtime.sendMessage({ action: 'noRecordsFound' });
+        } else {
+          console.log(LOG_PREFIX, 'Empty-state disappeared before confirmation; continuing to wait');
+        }
+      }, ACTIVE_CONFIG.noResultsStabilityMs);
+    };
+
+    if (hasNoResultsState()) {
+      scheduleNoResultsReport('initial');
+    }
+
     observer = new MutationObserver((mutations) => {
-      if (hasNoResultsState()) {
-        console.log(LOG_PREFIX, 'Empty-state panel appeared - reporting no records');
+      const table = getLoadedTable();
+      if (table) {
+        const rows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
+        console.log(LOG_PREFIX, 'Table loaded with', rows.length, 'rows');
         cleanup();
-        chrome.runtime.sendMessage({ action: 'noRecordsFound' });
+        scanAndClickFirstError(table);
         return;
       }
 
-      const table = document.querySelector(ACTIVE_CONFIG.tableSelector);
-      if (table) {
-        const rows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
-        if (rows.length > 0) {
-          console.log(LOG_PREFIX, 'Table loaded with', rows.length, 'rows');
-          cleanup();
-          scanAndClickFirstError(table);
-        }
+      if (hasNoResultsState()) {
+        scheduleNoResultsReport('mutation');
       }
     });
 
@@ -367,10 +400,17 @@
       const onDashboard = !!document.querySelector('[data-test-subj="dashboardViewport"]') ||
                           !!document.querySelector('.dshAppContainer');
       if (onDashboard) {
-        console.log(LOG_PREFIX, 'Timeout waiting for table - reporting no records');
-        chrome.runtime.sendMessage({ action: 'noRecordsFound' });
+        if (hasNoResultsState()) {
+          console.log(LOG_PREFIX, 'Timeout waiting for table with empty-state visible; confirming before reporting');
+          scheduleNoResultsReport('timeout');
+        } else {
+          console.log(LOG_PREFIX, 'Timeout waiting for table and no empty-state is visible - reporting no records');
+          cleanup();
+          chrome.runtime.sendMessage({ action: 'noRecordsFound' });
+        }
       } else {
         console.log(LOG_PREFIX, 'Timeout waiting for table - not a dashboard, suppressing');
+        cleanup();
       }
     }, ACTIVE_CONFIG.observerTimeout);
   }

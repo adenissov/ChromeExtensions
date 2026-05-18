@@ -16,7 +16,7 @@
   let spanBarExpanded = false;
   let responseBodyExtracted = false;
   let extractionAttempts = 0;
-  let noRecordsMessageSent = false;
+  let traceExtractionDelayLogged = false;
   let pageScrollDone = false;
   let innerScrollDone = false;
   const MAX_EXTRACTION_ATTEMPTS = 5;
@@ -237,32 +237,10 @@
   }
 
   /**
-   * Send "no records" message to background script
-   * @param {boolean} force - If true, skip the Jaeger page check
-   */
-  function sendNoRecordsMessage(force = false) {
-    if (noRecordsMessageSent || responseBodyExtracted) return;
-    // Only send if forced, or on a Jaeger page, or extraction was attempted
-    if (!force && !isJaegerPage() && extractionAttempts === 0) return;
-
-    noRecordsMessageSent = true;
-
-    try {
-      chrome.runtime.sendMessage({
-        action: 'responseBodyExtracted',
-        responseBody: 'No records in the Middleware log'
-      });
-      console.log('[Middleware Log] No records message sent to background');
-    } catch (error) {
-      console.log('[Middleware Log] Failed to send no records message:', error.message);
-    }
-  }
-
-  /**
    * Attempt to extract response body with retry logic
    */
   function attemptExtraction() {
-    if (responseBodyExtracted || noRecordsMessageSent) return;
+    if (responseBodyExtracted) return;
 
     extractionAttempts++;
     console.log('[Middleware Log] Extracting response.body... (attempt', extractionAttempts + '/' + MAX_EXTRACTION_ATTEMPTS + ')');
@@ -277,8 +255,9 @@
       setTimeout(attemptExtraction, 500);
     } else {
       console.log('[Middleware Log] Response body not found after', MAX_EXTRACTION_ATTEMPTS, 'attempts');
-      // Don't automatically send "No records" - let the timeout in background.js handle it
-      // Only send "No records" when hasNoRecords() explicitly detects empty state
+      // Do not report "No records" from a trace page. The dashboard page is
+      // the only reliable place to know that an SR has no middleware rows.
+      // Background timeouts handle trace extraction failures.
     }
   }
 
@@ -365,13 +344,14 @@
     // Initial attempt at ByteStream scroll (in case content is already rendered)
     setTimeout(performByteStreamScroll, 500);
 
-    // After 10 seconds, if no data extracted, show "No records"
+    // After 10 seconds, log extraction diagnostics but do not send a no-records
+    // result. Trace pages can have real records even when payload extraction
+    // misses the current DOM shape.
     setTimeout(() => {
-      if (!responseBodyExtracted && !noRecordsMessageSent) {
-        // Only send if on a Jaeger page or extraction was attempted
+      if (!responseBodyExtracted && !traceExtractionDelayLogged) {
         if (isJaegerPage() || extractionAttempts > 0) {
-          console.log('[Middleware Log] No records found after 10 second timeout');
-          sendNoRecordsMessage(true);
+          traceExtractionDelayLogged = true;
+          console.log('[Middleware Log] Trace payload not extracted after 10 seconds; leaving result to background timeout. Attempts:', extractionAttempts);
         }
       }
     }, 10000);
