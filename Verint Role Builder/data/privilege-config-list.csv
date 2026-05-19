@@ -1,0 +1,767 @@
+NLine,PrivilegeID,ModuleName,PrivilegeName
+1,0,,Adherence
+2,0,,    Adherence
+3,-10008,Adherence,        Authorize Adherence Exceptions
+4,-10320,Adherence,        Load and Playback Agent Interactions
+5,-10066,Adherence,        View Quick View
+6,-10005,Adherence,        View Time Records (Day Details)
+7,-10006,Adherence,            Edit Time Records (Day Details)
+8,0,,    Who is in
+9,-10106,Who is in,        View Who is in Status
+10,0,,Analytics
+11,-10556,Analytics,    Access Analytics Application
+12,-10555,Analytics,        Ad-hoc Search by Keywords
+13,-10552,Analytics,        Category Designer
+14,-10871,Analytics,    View Analytics Results
+15,-12041,Analytics,        Enable Continuous Accuracy Tuning
+16,-12042,Analytics,        Enable Continuous Accuracy Tuning Workspace
+17,-12044,Analytics,        Manage Hidden Terms for Term Trends
+18,-20701,Analytics,        View Transcript
+19,0,,Basic Adherence
+20,0,,    Adherence Configuration
+21,-10105,Adherence Configuration,        View Adherence Mapping
+22,-10022,Adherence Configuration,            Configure Adherence Mapping
+23,-10061,Adherence Configuration,        View Time Collections Mapping
+24,-10062,Adherence Configuration,            Configure Time Collections Mapping
+25,0,,    Basic Adherence
+26,-10011,Basic Adherence,        View Adherence
+27,0,,Coaching
+28,0,,    Coaching Admin
+29,-10450,Coaching Admin,        View Coaching Results
+30,-10452,Coaching Admin,            Configure Coaching Results
+31,-10460,Coaching Admin,        View Coaching Session Types
+32,-10462,Coaching Admin,            Configure Coaching Session Types
+33,-11181,Coaching Admin,        View Coaching Topics
+34,-11182,Coaching Admin,            Configure Coaching Topics
+35,0,,    Manage Coaching Sessions
+36,-10486,Manage Coaching Sessions,            Add / Delete Evaluation Attachments
+37,-10480,Manage Coaching Sessions,        View Interaction Attachments
+38,-10482,Manage Coaching Sessions,            Add / Delete Interaction Attachments
+39,-10470,Manage Coaching Sessions,        View Manage Coaching
+40,-10472,Manage Coaching Sessions,            Configure Coaching Sessions
+41,-10479,Manage Coaching Sessions,                Configure Specific Date/Time Schedule
+42,-10474,Manage Coaching Sessions,                Delete Coached Sessions
+43,-10476,Manage Coaching Sessions,                Enable All Coaching Session Statuses
+44,-10478,Manage Coaching Sessions,                Review Coaching Sessions
+45,0,,    My Coaching Sessions
+46,-10494,My Coaching Sessions,        View Evaluation Attachments
+47,-10492,My Coaching Sessions,        View Interaction Attachments
+48,-10490,My Coaching Sessions,        View My Coaching
+49,0,,eLearning
+50,0,,    Competencies
+51,-10379,Competencies,        View Competencies
+52,-10380,Competencies,            Create / Edit / Delete Competencies
+53,-10378,Competencies,        View My Competencies
+54,0,,    Competency Assignments
+55,-10381,Competency Assignments,        View Competency Assignments
+56,-10382,Competency Assignments,            Create / Edit / Delete Competency Assignments
+57,0,,    Lesson Assignments
+58,-10374,Lesson Assignments,        View Lesson Assignments
+59,-10375,Lesson Assignments,            Create / Edit / Delete Lesson Assignments
+60,0,,    Lessons
+61,-10495,Lessons,        Add / Remove Availability
+62,-10371,Lessons,        Self Assign Lessons
+63,-10372,Lessons,        View Lessons
+64,-10373,Lessons,            Create / Edit / Delete Lessons
+65,-10370,Lessons,        View My Lessons
+66,0,,    Priorities
+67,-13103,Priorities,        View Priorities
+68,-13104,Priorities,            Create / Edit / Delete Priorities
+69,0,,    Review
+70,-10394,Review,        Review Competencies
+71,-10376,Review,        Review Lessons
+72,-10377,Review,            Adjust Lessons
+73,0,,Enterprise Manager
+74,0,,    Archive
+75,-10433,Archive,        Assign Campaigns To Installation
+76,-10438,Archive,        View Archive Media
+77,-10439,Archive,            Edit Archive Media
+78,-10434,Archive,        View Archiving Campaigns
+79,-10435,Archive,            Edit Archiving Campaigns
+80,-10436,Archive,        View Archiving Schedules
+81,-10437,Archive,            Edit Archiving Schedules
+82,0,,    Attributes
+83,-10383,Attributes,        View Contact Attributes
+84,-10384,Attributes,            Edit Contact Attributes
+85,-10385,Attributes,            Edit Lookup Mappings
+86,-10444,Attributes,        View Custom Data Mappings
+87,-10445,Attributes,            Edit Custom Data Mappings
+88,0,,    Import Export Manager Configuration
+89,-10910,Import Export Manager Configuration,        Launch Import Export Manager
+90,-10893,Import Export Manager Configuration,        View Adapters
+91,-10894,Import Export Manager Configuration,            Edit Adapters
+92,-10895,Import Export Manager Configuration,        View Custom Data
+93,-10896,Import Export Manager Configuration,            Edit Custom Data
+94,-10891,Import Export Manager Configuration,        View Data Sources
+95,-10892,Import Export Manager Configuration,            Edit Data Sources
+96,-10897,Import Export Manager Configuration,        View General Settings
+97,-10898,Import Export Manager Configuration,            Edit General Settings
+98,-10899,Import Export Manager Configuration,        View Integration Settings
+99,-10901,Import Export Manager Configuration,            Edit Integration Settings
+100,-10904,Import Export Manager Configuration,        View Platform Integration Type
+101,-10905,Import Export Manager Configuration,            Edit Platform Integration Type
+102,-10902,Import Export Manager Configuration,        View Speech Settings
+103,-10903,Import Export Manager Configuration,            Edit Speech Settings
+104,0,,    Import Export Manager Operation
+105,-10886,Import Export Manager Operation,        View Data sync Statistics
+106,-10887,Import Export Manager Operation,        View Jobs
+107,-10888,Import Export Manager Operation,            Edit Jobs
+108,-10885,Import Export Manager Operation,        View Job Statistics
+109,-10931,Import Export Manager Operation,        View Retriable Permanent Failed Call Statistics
+110,-10932,Import Export Manager Operation,            Edit Retriable Permanent Failed Calls List
+111,-10889,Import Export Manager Operation,        View Selection Plans
+112,-10890,Import Export Manager Operation,            Edit Selection Plans
+113,-10930,Import Export Manager Operation,        View Version
+114,0,,    Installations
+115,-20989,Installations,        View Desktop Status
+116,-21005,Installations,            Collect Component Logs
+117,-21001,Installations,            Create Desktops
+118,-10290,Installations,        View Installation Hierarchy
+119,-20952,Installations,            Access System Engineering Tool
+120,-20951,Installations,                Change Log Level
+121,-20946,Installations,                Download/Modify Performance Counter
+122,-20945,Installations,                Download Files/Folders/Scenarios
+123,-20947,Installations,                Download Windows Event
+124,-20948,Installations,                Download Windows Registry
+125,-20949,Installations,                Start/Stop Windows Services
+126,-20950,Installations,                View System Resources
+127,-10425,Installations,            Delete Installation Configuration Messages
+128,-10291,Installations,            Edit Installation Hierarchy
+129,-10701,Installations,                Activate/ Deactivate Server Role
+130,-10923,Installations,                Add Serial Number
+131,-10395,Installations,                Assign Data Sources
+132,-10626,Installations,                Assign Roles to Role
+133,-10850,Installations,                Block Distribution to Servers
+134,-10293,Installations,                Configure System Maintenance
+135,-10922,Installations,                Edit Advanced Settings in Installation Hierarchy
+136,-20802,Installations,                Import Data Center
+137,-20801,Installations,            Export Data Center
+138,-10424,Installations,            View/Run Configuration Checker
+139,-10414,Installations,            View Installation Security Settings
+140,-10415,Installations,                Edit Installation Security Settings
+141,-10924,Installations,            View Recording Channel Count 
+142,-10925,Installations,                Edit Recording Channel Count 
+143,0,,    Recording Rules
+144,-10396,Recording Rules,        Assign Rules To Installation
+145,-10388,Recording Rules,        View Recording Rules
+146,-10389,Recording Rules,            Edit Recording Rules
+147,0,,    RM
+148,-10292,Risk Management,        Configure Recorder & Analyzer
+149,-10309,Risk Management,            View Consolidator
+150,-10310,Risk Management,                Edit Consolidator
+151,-10412,Risk Management,            View Disk Management Drives
+152,-10413,Risk Management,                Edit Disk Management Drives
+153,-10307,Risk Management,            View Disk Management Settings
+154,-10308,Risk Management,                Edit Disk Management Settings
+155,-10446,Risk Management,            View Roles Configuration
+156,-10447,Risk Management,                Edit Roles Configuration
+157,-10300,Risk Management,            View Voice Card Configuration
+158,-10302,Risk Management,                Configure Voice Card Hardware
+159,-10301,Risk Management,                    Configure Voice Card Static Tags
+160,-10311,Risk Management,        Import Configuration
+161,-10312,Risk Management,            Export Configuration
+162,-10298,Risk Management,        View Archive Configuration
+163,-10299,Risk Management,            Edit Archive Configuration
+164,-10356,Risk Management,            Eject Archive Drive
+165,-10318,Risk Management,"                Manage Archive Drive(format, reprint label, etc)"
+166,-10432,Risk Management,            Verify Archive Media
+167,-10347,Risk Management,        View Call Control
+168,-10348,Risk Management,            Edit Call Control
+169,-10313,Risk Management,        View Component Logs
+170,-10314,Risk Management,            Edit Component Logs
+171,-10344,Risk Management,        View Component Services
+172,-10345,Risk Management,            Edit Component Services
+173,-10346,Risk Management,            Reboot Recorder Server
+174,-10342,Risk Management,        View Compression Type
+175,-10343,Risk Management,            Edit Compression Type
+176,-10296,Risk Management,        View General Configuration
+177,-10297,Risk Management,            Edit General Configuration
+178,-10364,Risk Management,        View Integration Framework configuration
+179,-10390,Risk Management,            Edit Integration Framework Adapter Attributes
+180,-10365,Risk Management,            Edit Integration Framework Adapters
+181,-10323,Risk Management,        View Live Monitor Configuration
+182,-10324,Risk Management,            Edit Live Monitor Configuration
+183,-10340,Risk Management,        View Network Settings
+184,-10341,Risk Management,            Edit Network Settings
+185,-10854,Risk Management,            View Network Settings For IPSI
+186,-10354,Risk Management,        View SNMP Configuration
+187,-10355,Risk Management,            Edit SNMP Configuration
+188,-10422,Risk Management,        View Status Summary
+189,-20703,Risk Management,            Edit Status Thresholds
+190,-10423,Risk Management,            View Integration Status
+191,-10853,Risk Management,        View Workflow Reprocessing
+192,0,,    Storage Targets
+193,-21002,Storage Targets,        View Storage Targets
+194,-21003,Storage Targets,            Create / Edit / Delete Storage Targets
+195,0,,    System Monitor
+196,-10315,System Monitor,        View Alarms
+197,-10316,System Monitor,            Acknowledge Alarms
+198,-10303,System Monitor,        View Alarm Settings
+199,-10304,System Monitor,            Edit Alarm Settings
+200,-21013,System Monitor,                Raise/Acknowledge Test Alarms
+201,-10319,System Monitor,        View Status
+202,-20702,System Monitor,            Edit Status
+203,0,,Forecasting and Scheduling
+204,0,,    Branch Forecasting
+205,-20920,Branch Forecasting,        View Branch Planning
+206,0,,    Campaign
+207,-10229,Campaign,        Create Campaign
+208,-10114,Campaign,        View Campaign
+209,-10115,Campaign,            Configure Campaign
+210,-10233,Campaign,            Delete Campaign
+211,-11121,Campaign,            View Forecasting
+212,-10272,Campaign,                Clear Base Forecast
+213,-10282,Campaign,                Create Backlog Distribution
+214,-10271,Campaign,                Create Base Forecast
+215,-20995,Campaign,                Delete All Forecast Profiles
+216,-10270,Campaign,                Edit Forecast
+217,-11122,Campaign,            View Service Goals
+218,-11123,Campaign,                Modify Service Goals
+219,-20427,Campaign,        View Campaign Settings
+220,0,,    Flex Time Processing
+221,-20901,Flex Time Processing,        View Flex Time Requests for Employee
+222,-20903,Flex Time Processing,            Approve / Deny Pending Flex Time Requests
+223,-20973,Flex Time Processing,                Approve / Deny Pending Flex Time Requests for Mobile
+224,-20902,Flex Time Processing,            Create / Edit / Withdraw Flex Time Requests for Employee
+225,-20972,Flex Time Processing,                Create / Edit / Withdraw Flex Time Requests for Employee for Mobile
+226,-20971,Flex Time Processing,            View Flex Time Requests for Employee for Mobile
+227,-20904,Flex Time Processing,        View Personal Flex Time Requests
+228,-20905,Flex Time Processing,            Create / Edit / Withdraw Personal Flex Time Requests
+229,-20975,Flex Time Processing,                Create / Edit / Withdraw Personal Flex Time Requests for Mobile
+230,-20974,Flex Time Processing,            View Personal Flex Time Requests for Mobile
+231,0,,    Flex Time Setup
+232,-20915,Flex Time Setup,        Configure Flex Time Auto Processing
+233,-20914,Flex Time Setup,        Configure Flex Time Filing Rules
+234,-20912,Flex Time Setup,        Configure Flex Time Policies
+235,-20911,Flex Time Setup,        Configure Flex Time Settings
+236,-20913,Flex Time Setup,        Configure Flex Time Validation Rules
+237,-20916,Flex Time Setup,        Purge Flex Time Requests
+238,0,,    Host Settings
+239,-20999,Host Settings,        Request Management Host Settings
+240,0,,    IntraDay
+241,-10263,IntraDay,        Reforecast
+242,-10264,IntraDay,        View Trends
+243,-10265,IntraDay,            Configure Trends
+244,0,,    Operations
+245,-20419,Operations,        Allow backdating of VCT events during entry
+246,-20421,Operations,        Hide VCT Arrivals Column
+247,-20425,Operations,        Hide VCT Checkin Column
+248,-20423,Operations,        Hide VCT Checkout Column
+249,-20420,Operations,        Hide VCT Inventory Adjustment Column
+250,-20422,Operations,        Hide VCT Inventory Balance Column
+251,-20424,Operations,        Hide VCT WIP Balance Column
+252,-20416,Operations,        View/Edit My VCT
+253,-20418,Operations,        View/Edit VCT Queue Configuration
+254,-20417,Operations,        View/Edit VCT Tracking
+255,0,,    Personal Schedule Preferences
+256,-10121,Personal Schedule Preferences,        View Personal Schedule Preferences In Simple Mode
+257,-10122,Personal Schedule Preferences,            Edit Personal Schedule Preferences In Simple Mode
+258,-10269,Personal Schedule Preferences,            View Over Time / Voluntary Time Off Personal Preferences
+259,0,,    Queue Analytics
+260,-10260,Queue Analytics,        View Queue Analytics
+261,-10266,Queue Analytics,            Create Public Views
+262,-10261,Queue Analytics,            Edit Campaign Queue History
+263,-10328,Queue Analytics,            View/Edit Queue Analytics Notes
+264,-10358,Queue Analytics,            View All Queue History
+265,-10262,Queue Analytics,                Edit All Queue History
+266,0,,    Required Pay Period Hours
+267,-20922,Required Pay Period Hours,        Configure Required Pay Period Settings
+268,0,,    Schedule Publishing
+269,-10234,Schedule Publishing,        Publish Schedule for Campaign
+270,-10235,Schedule Publishing,        Publish Schedule for Organization
+271,0,,    Schedule Viewing
+272,-11125,Schedule Viewing,        Configure Display Of Net Staffing In Graphical Schedules
+273,-20827,Schedule Viewing,            View Net Staffing Ribbon for Mobile
+274,-10351,Schedule Viewing,        Configure Timeoff Events Display
+275,-10277,Schedule Viewing,        Configure Unavailability Display
+276,-10123,Schedule Viewing,        Edit Forecasting and Scheduling Calendar
+277,-20921,Schedule Viewing,            Bulk Edit Forecasting and Scheduling Calendar
+278,-20441,Schedule Viewing,            Schedule for Multiple Campaigns
+279,-10113,Schedule Viewing,        View Employee Schedule Comments
+280,-10237,Schedule Viewing,        View Employees Schedules
+281,-20941,Schedule Viewing,            View Employees Schedules for Mobile
+282,-10116,Schedule Viewing,        View Forecasting and Scheduling Calendar
+283,-10111,Schedule Viewing,        View Organization Schedules
+284,-20990,Schedule Viewing,            View Organization Schedules For Mobile
+285,-10112,Schedule Viewing,        View Personal Schedule Comments
+286,-10239,Schedule Viewing,        View Personal Schedules
+287,-20808,Schedule Viewing,            View Personal Schedules for Mobile
+288,0,,    Shift Bidding Processing
+289,-10177,Shift Bidding Processing,        Escalate Denied Shift Bids
+290,-20814,Shift Bidding Processing,            Escalate Denied Shift Bids for Mobile
+291,-10175,Shift Bidding Processing,        View Personal Shift Bids
+292,-10176,Shift Bidding Processing,            Edit Personal Shift Bids
+293,-20813,Shift Bidding Processing,                Edit Personal Shift Bids for Mobile
+294,-20807,Shift Bidding Processing,            View Personal Shift Bids for Mobile
+295,-10171,Shift Bidding Processing,        View Shift Bids for Employee
+296,-10174,Shift Bidding Processing,            Approve / Deny Escalated Shift Bids
+297,-20964,Shift Bidding Processing,                Approve / Deny Escalated Shift Bids for Mobile
+298,-10173,Shift Bidding Processing,            Approve / Deny Pending Shift Bids
+299,-20963,Shift Bidding Processing,                Approve / Deny Pending Shift Bids for Mobile
+300,-10172,Shift Bidding Processing,            Edit Shift Bids for Employee
+301,-20962,Shift Bidding Processing,                Edit Shift Bids for Employee for Mobile
+302,-20961,Shift Bidding Processing,            View Shift Bids for Employee for Mobile
+303,0,,    Shift Bidding Setup
+304,-20980,Shift Bidding Setup,        Configure Shift Bidding Auto Breaking Rules
+305,-10169,Shift Bidding Setup,        Configure Shift Bidding Auto Processing
+306,-10168,Shift Bidding Setup,        Configure Shift Bidding Filing Rules
+307,-10166,Shift Bidding Setup,        Configure Shift Bidding Policies
+308,-10162,Shift Bidding Setup,        Configure Shift Bidding Settings
+309,-10167,Shift Bidding Setup,        Configure Shift Bidding Validation Rules
+310,-10170,Shift Bidding Setup,        Purge Shift Bidding Requests
+311,-10163,Shift Bidding Setup,        View Shift Bidding Auctions
+312,-10165,Shift Bidding Setup,            Edit Employees in Shift Bidding Auctions
+313,-10164,Shift Bidding Setup,            Edit Shift Bidding Auctions
+314,0,,    Shift Requests & Changes Processing
+315,-11138,Shift Requests & Changes Processing,        Escalate Denied Request
+316,-20934,Shift Requests & Changes Processing,            Escalate Denied Request for Mobile
+317,-11136,Shift Requests & Changes Processing,        View Personal Shift Requests & Changes
+318,-11137,Shift Requests & Changes Processing,            Create / Edit / Withdraw Personal Shift Requests & Changes
+319,-20828,Shift Requests & Changes Processing,                Create / Edit / Withdraw Personal Shift Requests & Changes for Mobile
+320,-20829,Shift Requests & Changes Processing,            View Personal Shift Requests & Changes for Mobile
+321,-11132,Shift Requests & Changes Processing,        View Shift Requests & Changes for Employee
+322,-20955,Shift Requests & Changes Processing,            Accept / Reject Withdraw Shift Requests & Changes
+323,-20957,Shift Requests & Changes Processing,                Accept / Reject Withdraw Shift Requests & Changes for Mobile
+324,-11135,Shift Requests & Changes Processing,            Approve / Deny Escalated Shift Requests & Changes
+325,-20958,Shift Requests & Changes Processing,                Approve / Deny Escalated Shift Requests & Changes for Mobile
+326,-11134,Shift Requests & Changes Processing,            Approve / Deny Pending Shift Requests & Changes
+327,-20959,Shift Requests & Changes Processing,                Approve / Deny Pending Shift Requests & Changes for Mobile
+328,-11133,Shift Requests & Changes Processing,            Create / Edit / Withdraw Shift Requests & Changes for Employee
+329,-20960,Shift Requests & Changes Processing,                Create / Edit / Withdraw Shift Requests & Changes for Employee for Mobile
+330,-20956,Shift Requests & Changes Processing,            View Shift Requests & Changes for Employee for Mobile
+331,0,,    Shift Requests & Changes Setup
+332,-20981,Shift Requests & Changes Setup,        Configure Shift Requests & Changes Auto Breaking Rules
+333,-11130,Shift Requests & Changes Setup,        Configure Shift Requests & Changes Auto Processing
+334,-11129,Shift Requests & Changes Setup,        Configure Shift Requests & Changes Filing Rules
+335,-11127,Shift Requests & Changes Setup,        Configure Shift Requests & Changes Policies
+336,-11126,Shift Requests & Changes Setup,        Configure Shift Requests & Changes Settings
+337,-11128,Shift Requests & Changes Setup,        Configure Shift Requests & Changes Validation Rules
+338,-11131,Shift Requests & Changes Setup,        Purge Shift Requests & Changes
+339,0,,    Shift Swap Processing
+340,-10161,Shift Swap Processing,        Escalate Denied Request
+341,-20816,Shift Swap Processing,            Escalate Denied Request for Mobile
+342,-10150,Shift Swap Processing,        Read / Write to Swap Board
+343,-20821,Shift Swap Processing,            Read / Write to Swap Board for Mobile
+344,-10153,Shift Swap Processing,        View Employee Skills
+345,-10154,Shift Swap Processing,            View Employee Proficiencies
+346,-20966,Shift Swap Processing,                View Employee Proficiencies for Mobile
+347,-20965,Shift Swap Processing,            View Employee Skills for Mobile
+348,-10151,Shift Swap Processing,        View Personal Skills
+349,-10152,Shift Swap Processing,            View Personal Proficiencies
+350,-20992,Shift Swap Processing,                View Personal Proficiencies For Mobile
+351,-20991,Shift Swap Processing,            View Personal Skills For Mobile
+352,-10159,Shift Swap Processing,        View Personal Swap Requests
+353,-10160,Shift Swap Processing,            Create / Edit / Withdraw Personal Swap Requests
+354,-20819,Shift Swap Processing,                Create / Edit / Withdraw Personal Swap Requests for Mobile
+355,-20820,Shift Swap Processing,            View Personal Swap Requests for Mobile
+356,-10155,Shift Swap Processing,        View Swap Requests for Employee
+357,-10158,Shift Swap Processing,            Approve / Deny Escalated Swap Request
+358,-20969,Shift Swap Processing,                Approve / Deny Escalated Swap Request for Mobile
+359,-10157,Shift Swap Processing,            Approve / Deny Pending Swap Request
+360,-20968,Shift Swap Processing,                Approve / Deny Pending Swap Request for Mobile
+361,-10156,Shift Swap Processing,            Edit Shift Swap Request Comments for Employee
+362,-20967,Shift Swap Processing,            View Swap Requests for Employee for Mobile
+363,-20917,Shift Swap Processing,            Withdraw Shift Swap Request for Employee
+364,-20970,Shift Swap Processing,                Withdraw Shift Swap Request for Employee for Mobile
+365,0,,    Shift Swap Setup
+366,-20982,Shift Swap Setup,        Configure Shift Swap Auto Breaking Rules
+367,-10148,Shift Swap Setup,        Configure Shift Swap Auto Processing
+368,-10147,Shift Swap Setup,        Configure Shift Swap Filing Rules
+369,-10145,Shift Swap Setup,        Configure Shift Swap Policies
+370,-10240,Shift Swap Setup,        Configure Shift Swap Settings
+371,-10146,Shift Swap Setup,        Configure Shift Swap Validation Rules
+372,-10149,Shift Swap Setup,        Purge Shift Swap Requests
+373,0,,    Time Off Bidding
+374,-20662,Time Off Bidding,        View Time Off Bidding
+375,-20663,Time Off Bidding,            Edit Time Off Bidding
+376,0,,    Time Off Processing
+377,-10929,Time Off Processing,        Add Request to Waitlist
+378,-20815,Time Off Processing,            Add Request to Waitlist for Mobile
+379,-10144,Time Off Processing,        Escalate Denied Request
+380,-20935,Time Off Processing,            Escalate Denied Request for Mobile
+381,-20664,Time Off Processing,        View Personal Interval Allocation Time Off Calendar
+382,-20665,Time Off Processing,            View Pending and Scheduled Links on Time Off Calendar
+383,-20818,Time Off Processing,            View Personal Interval Allocation Time Off Calendar for Mobile
+384,-10141,Time Off Processing,        View Personal Time Off Calendar
+385,-10353,Time Off Processing,            View Pending and Scheduled Links on Time Off Calendar
+386,-20810,Time Off Processing,            View Personal Time Off Calendar for Mobile
+387,-10138,Time Off Processing,        View Personal Time Off Requests
+388,-10139,Time Off Processing,            Create / Edit / Withdraw Personal Time Off Requests
+389,-20809,Time Off Processing,                Create / Edit / Withdraw Personal Time Off Requests for Mobile
+390,-20817,Time Off Processing,            View Personal Time Off Requests for Mobile
+391,-10140,Time Off Processing,        View Personal Time Off Summary
+392,-20812,Time Off Processing,            View Personal Time Off Summary for Mobile
+393,-10142,Time Off Processing,        View Time Off Calendar
+394,-10134,Time Off Processing,        View Time Off Requests for Employee
+395,-10391,Time Off Processing,            Accept / Reject Time Off Withdraw Request
+396,-20940,Time Off Processing,                Accept / Reject Time Off Withdraw Request for Mobile
+397,-10137,Time Off Processing,            Approve / Deny Escalated Time Off Request
+398,-20939,Time Off Processing,                Approve / Deny Escalated Time Off Request for Mobile
+399,-10136,Time Off Processing,            Approve / Deny Pending Time Off Request
+400,-20938,Time Off Processing,                Approve / Deny Pending Time Off Request for Mobile
+401,-10135,Time Off Processing,            Create / Edit / Withdraw Time Off Requests for Employee
+402,-20937,Time Off Processing,                Withdraw Time Off Requests for Employee for Mobile
+403,-20936,Time Off Processing,            View Time Off Requests for Employee for Mobile
+404,0,,    Time Off Setup
+405,-10124,Time Off Setup,        Activate Time Off Workflow
+406,-20979,Time Off Setup,        Configure Time Off Auto Breaking Rules
+407,-10132,Time Off Setup,        Configure Time Off Auto Processing
+408,-10126,Time Off Setup,        Configure Time Off Calendar Colors
+409,-10131,Time Off Setup,        Configure Time Off Filing Rules
+410,-10129,Time Off Setup,        Configure Time Off Policies
+411,-20650,Time Off Setup,        Configure Time Off Request Options
+412,-10130,Time Off Setup,        Configure Time Off Validation Rules
+413,-20994,Time Off Setup,        Configure Time Off Waitlists
+414,-10125,Time Off Setup,        Configure Time Off Year for Employees
+415,-10133,Time Off Setup,            Purge Time Off Requests
+416,-10127,Time Off Setup,            View Time Off Pools
+417,-10128,Time Off Setup,                Configure Time Off Pools
+418,0,,    Workloads
+419,-10624,Workloads,        View Media Types
+420,-10625,Workloads,            Configure Media Types
+421,-10117,Workloads,        View Queues
+422,-10118,Workloads,            Configure Queues
+423,0,,    Work Rules
+424,-11270,Work Rules,        Edit Rotations
+425,-11271,Work Rules,            Add Rotations
+426,-11272,Work Rules,            Delete Rotations
+427,-10860,Work Rules,        Edit Work Rules
+428,-10859,Work Rules,        View Work Rules
+429,0,,Framework
+430,0,,    Alerts
+431,-14406,Alerts,        My Notifications
+432,-10267,Alerts,        Send Desktop Messages
+433,-20977,Alerts,        Send Messages to Mobile App Recipients
+434,-10242,Alerts,        View Alerts Setup
+435,-10243,Alerts,            Configure Alerts Setup
+436,-10273,Alerts,        View Campaign Alerts Rules
+437,-10274,Alerts,            Configure Campaign Alerts Rules
+438,-14400,Alerts,        View Notifications
+439,-14402,Alerts,            Send Notifications
+440,-14404,Alerts,            Update Notifications
+441,-10103,Alerts,        View Organization Alerts Rules
+442,-10104,Alerts,            Configure Organization Alerts Rules
+443,-10275,Alerts,        View System Alerts Rules
+444,-10276,Alerts,            Configure System Alerts Rules
+446,0,,    API Keys
+447,-20929,API Keys,        View API Keys
+448,-21035,API Keys,            Generate Custom API Key
+449,-20930,API Keys,            Generate External API Key
+450,-20931,API Keys,            Generate Internal API Key
+451,0,,    Authorization
+452,-10101,Authorization,        View Access Rights
+453,-10102,Authorization,            Configure Access Rights
+454,-20923,Authorization,                View/Configure Admin Access Rights
+455,-10069,Authorization,        View User Information
+456,-10070,Authorization,            Edit User Information
+457,-10054,Authorization,        View User Roles
+458,-10029,Authorization,            Configure User Roles
+459,-20924,Authorization,                View/Configure Admin Roles
+460,0,,    Dashboards
+461,-10798,Dashboards,        View Dashboard
+462,-10799,Dashboards,            Edit Dashboard
+463,-20444,Dashboards,                Change Dashboard Owner
+464,-20443,Dashboards,                Duplicate Shared Dashboard
+465,-20442,Dashboards,                Share Dashboard
+466,0,,    Data Sources
+467,-10203,Data Sources,"        Data Source Ports (e.g Extentions, Workstations)"
+468,-10119,Data Sources,        View Data Source Groups
+469,-10120,Data Sources,            Configure Data Source Groups
+470,-10053,Data Sources,        View Data Sources
+471,-10026,Data Sources,            Configure Data Sources
+472,-10204,Data Sources,        View Data Source Summary (e.g Name and basic properties )
+473,-21040,Data Sources,            View Capturing Profiles
+474,-21041,Data Sources,                Edit Capturing Profiles
+475,-21033,Data Sources,            View Extensions
+476,-21034,Data Sources,                Edit Extensions
+477,-21032,Data Sources,            View Resource Groups (Member Groups)
+478,0,,    Employees
+479,-10014,Employees,        View Employees
+480,-10015,Employees,            Add/Edit/Terminate Employees
+481,-20706,Employees,                Import Employees
+482,-10016,Employees,            Delete Employees (Permanently)
+483,-20925,Employees,            Export Employees
+484,-20988,Employees,            View Employees For Mobile
+485,-20707,Employees,        View Employees By Group Scope
+486,0,,    Gadgets
+487,-10811,Gadgets,        Edit Gadgets
+488,-10810,Gadgets,        View Gadgets
+489,0,,    Group Access
+490,-10366,Group Access,        View Group
+491,-10367,Group Access,            Edit Group Members
+492,-10368,Group Access,                Configure Group
+493,0,,    Integration Server Access
+494,-10034,Integration Server Access,        View Only Access to Integration Server
+495,-10033,Integration Server Access,            Power User Access to Integration Server
+496,-10032,Integration Server Access,            Super User Access to Integration Server
+497,0,,    Organization
+498,-10049,Organization,        View Activities
+499,-11273,Organization,            Add Activities
+500,-11275,Organization,            Delete Activities
+501,-11274,Organization,            Edit Activities
+502,-10620,Organization,        View Employee Types
+503,-10621,Organization,            Configure Employee Types
+504,-10052,Organization,        View Holidays
+505,-10025,Organization,            Configure Holidays
+506,-10051,Organization,        View Job Titles
+507,-10024,Organization,            Configure Job Titles
+508,-10020,Organization,        View Organization
+509,-10018,Organization,            Configure Organization
+510,-10232,Organization,            Create Organization
+511,-10019,Organization,            Delete Organization
+512,-10622,Organization,        View Skills
+513,-10623,Organization,            Configure Skills
+514,0,,    Personal Profile
+515,-10003,Personal Profile,        View Personal Profile
+516,0,,    Reports
+517,-10352,Reports,        Access Ad Hoc Query
+518,-10040,Reports,        Administer Report Schedules
+519,-10042,Reports,            Delete Report Schedules
+520,-10044,Reports,        Configure Report Security
+521,-10357,Reports,        Deploy Reports
+522,-10505,Reports,        Distribute Scheduled Reports to External Destinations
+523,-10503,Reports,        Schedule Reports for Other Users
+524,-10420,Reports,        View Ad Hoc Query
+525,-10039,Reports,        View Report
+526,-10041,Reports,            Run Report
+527,0,,    System Management
+528,-20928,System Management,        Configure Feature Settings
+529,-20997,System Management,            Configure Application Startup Messages
+530,-21012,System Management,            Configure Common Cloud Services
+531,-20996,System Management,            Configure Mobile Authentication Method
+532,-21037,System Management,            Configure Operations Manager URL
+533,-20998,System Management,            Configure User Session Limits
+534,-10257,System Management,        Configure License
+535,-10017,System Management,        Configure System Parameters
+536,-10369,System Management,        View Audit Trail
+537,-10241,System Management,        View Caches
+538,-10031,System Management,        View System Log
+539,-10030,System Management,            Configure System Log
+540,0,,    User Preferences
+541,-10900,User Preferences,        Customize Navigation
+542,0,,    What If
+543,-10268,What If,        Access to What If Mode
+544,-20426,What If,            Synchronize What If Database
+545,0,,Interactions
+546,0,,    Administration
+547,-10879,Administration,        Assignment Manager
+548,-10867,Administration,        Caption Editor
+549,-10876,Administration,        Conditional Custom Data
+550,-10866,Administration,        Custom Data
+551,-10869,Administration,        Flag Manager
+552,-10870,Administration,        Form Designer
+553,-10545,Administration,            Create Forms
+554,-10546,Administration,            Delete Forms
+555,-10547,Administration,            Edit Forms
+556,-10548,Administration,            Export and Import Forms
+557,-10550,Administration,            Hide Forms
+558,-10549,Administration,            Manage Shared Component
+559,-10551,Administration,            Manage Shared Data
+560,-20661,Administration,        Interactions Settings
+561,-10878,Administration,        Project Rules Manager
+562,-20983,Administration,            Create Delete Interactions Rules
+563,-20985,Administration,            Create Interaction Analytics Export Rules
+564,-20984,Administration,            Create Speech Analytics Rules
+565,-10880,Administration,        Reports
+566,-10501,Administration,            Filter by all Evaluators/Assessors
+567,-10506,Administration,            Filter by all Groups
+568,-10504,Administration,            Generate Reports for Evaluations/Assessments Made by Leaders of my Group(s)
+569,-10877,Administration,        Shared Inbox Manager
+570,0,,    Assessments
+571,-20576,Assessments,        Assess
+572,-20577,Assessments,            Edit Assessments I Completed
+573,-20578,Assessments,                Delete Assessments I Completed
+574,-20579,Assessments,        Edit Assessments Other Users Completed
+575,-20580,Assessments,            Delete Assessments Other Users Completed
+576,-20591,Assessments,        Search Any Assessment Form
+577,-20572,Assessments,        Search for Assessments
+578,-20573,Assessments,            Search for Assessments Made By Leaders of My Group(s)
+579,-20574,Assessments,                Search for Any Assessor
+580,-20589,Assessments,        Use Staged Forms
+581,0,,    Evaluations
+582,-20562,Evaluations,        Customize inbox
+583,-20548,Evaluations,        Edit Evaluations Other Users Completed
+584,-20549,Evaluations,            Delete Evaluations Other Users Completed
+585,-20561,Evaluations,        Employee Feedback
+586,-20545,Evaluations,        Evaluate
+587,-20546,Evaluations,            Edit Evaluations I Completed
+588,-20547,Evaluations,                Delete Evaluations I Completed
+589,-20563,Evaluations,        Reject from Shared Inbox
+590,-20551,Evaluations,        Remove Evaluation Flags
+591,-20590,Evaluations,        Search Any Evaluation Form
+592,-20542,Evaluations,        Search for Evaluations
+593,-20543,Evaluations,            Search for Evaluations Made by Leaders of My Group(s)
+594,-20544,Evaluations,                Search for Any Evaluator
+595,-20552,Evaluations,        Use Staged Forms
+596,0,,    General
+597,-20944,General,        Download Results
+598,-20976,General,        Playback Without Masking
+599,-20954,General,        Replay Approver
+600,-20953,General,        Replay Without Authorization
+601,0,,    Interactions
+602,-20509,Interactions,        Delete Interactions
+603,-20510,Interactions,        Download interactions
+604,-20527,Interactions,            Download decrypted interactions
+605,-20528,Interactions,            Download interactions in Standard Format
+606,-20624,Interactions,                Export interaction media (decrypted)
+607,-20502,Interactions,        Edit Private Annotations
+608,-20503,Interactions,            Delete Private Annotations
+609,-20526,Interactions,        Edit Remark
+610,-20513,Interactions,        Monitor Audio
+611,-20511,Interactions,        Monitor By Employee
+612,-20512,Interactions,        Monitor By Extension
+613,-20514,Interactions,        Monitor Screen
+614,-20515,Interactions,        Play Back Audio
+615,-20517,Interactions,        Play Back Interactions via Telephone
+616,-20516,Interactions,        Play Back Screen
+617,-20529,Interactions,        Play Back Video
+618,-20518,Interactions,        Remove Contact Flags
+619,-20519,Interactions,        Search for Interactions
+620,-20521,Interactions,            Search for Deleted Interactions
+621,-20522,Interactions,            Search for Interactions Outside My Filters
+622,-20520,Interactions,            Search for Interactions Outside My Role Scope
+623,-20525,Interactions,        Send Interaction Information
+624,-20523,Interactions,        Send Interactions as a Link
+625,-20524,Interactions,        Send Interactions as an Attachment
+626,-20508,Interactions,        View Others Private Annotations
+627,-20504,Interactions,        View Public Annotations
+628,-20505,Interactions,            Edit Public Annotations
+629,-20506,Interactions,                Add Public Annotations
+630,-20507,Interactions,                Delete Public Annotations
+631,0,,    My Evaluations
+632,-20647,My Evaluations,        Employee Feedback
+633,-20634,My Evaluations,        Evaluate Myself
+634,-20635,My Evaluations,            Edit My Evaluations
+635,-20636,My Evaluations,                Delete My Evaluations
+636,-20637,My Evaluations,        Remove Evaluation Flags
+637,-20592,My Evaluations,        Search Any Evaluation Form
+638,-20632,My Evaluations,        Search for Evaluations
+639,-20633,My Evaluations,            Search for Any Evaluator
+640,-20639,My Evaluations,        View Comments in Evaluations
+641,-20642,My Evaluations,        View Evaluation Score
+642,-20640,My Evaluations,        View Evaluator Name in Evaluations
+643,-20641,My Evaluations,        View Instructions in Evaluations
+644,-20643,My Evaluations,        View Maximum Score in Evaluations
+645,-20644,My Evaluations,        View Rating in Evaluations
+646,-20645,My Evaluations,        View Reason in Evaluations
+647,-20646,My Evaluations,        View Status in Evaluations
+648,0,,    My Interactions
+649,-20609,My Interactions,        Delete Interactions
+650,-20610,My Interactions,        Download interactions
+651,-20620,My Interactions,            Download decrypted interactions
+652,-20621,My Interactions,            Download interactions in Standard Format
+653,-20625,My Interactions,                Export interaction media (decrypted)
+654,-20602,My Interactions,        Edit Private Annotations
+655,-20603,My Interactions,            Delete Private Annotations
+656,-20619,My Interactions,        Edit Remark
+657,-20611,My Interactions,        Play Back Audio
+658,-20613,My Interactions,        Play Back Interactions via Telephone
+659,-20612,My Interactions,        Play Back Screen
+660,-20622,My Interactions,        Play Back Video
+661,-20614,My Interactions,        Remove Contact Flags
+662,-20615,My Interactions,        Search for Interactions
+663,-20618,My Interactions,        Send Interaction Information
+664,-20616,My Interactions,        Send Interactions as a Link
+665,-20617,My Interactions,        Send Interactions as an Attachment
+666,-20608,My Interactions,        View Others Private Annotations
+667,-20604,My Interactions,        View Public Annotations
+668,-20605,My Interactions,            Edit Public Annotations
+669,-20606,My Interactions,                Add Public Annotations
+670,-20607,My Interactions,                Delete Public Annotations
+671,0,,My Time
+672,-10800,My Time,    My Time - My Adherence
+673,-10801,My Time,        View Time Tracking Events
+674,-10001,My Time,    My Time - Schedule
+675,-10047,My Time,    My Time - Time Record
+676,-10002,My Time,    My Time - View Historical Time Records
+677,0,,  Risk Management
+678,-10399,Risk Management,    View Risk Management
+679,-10401,Risk Management,        Publish Saved Searches
+680,0,,  Scorecard
+681,0,,    Extensible Dimension
+682,-10428,Extensible Dimension,        View Extensible Dimension Members
+683,-10429,Extensible Dimension,            Configure Extensible Dimension Members
+684,-10426,Extensible Dimension,        View Extensible Dimension Types
+685,-10427,Extensible Dimension,            Configure Extensible Dimension Types
+686,0,,    General Setup
+687,-20927,General Setup,        View All Other Source Types
+688,-10416,General Setup,        View F&S Queue Mappings
+689,-10417,General Setup,            Configure F&S Queue Mappings
+690,-20926,General Setup,        View Quality Management Source Type
+691,-10230,General Setup,        View Source Codes
+692,-10231,General Setup,            Configure Source Codes
+693,-10222,General Setup,        View Source Mappings
+694,-10223,General Setup,            Configure Source Mappings
+695,-10217,General Setup,        View Source Measures
+696,-10218,General Setup,            Configure Source Measures
+697,-11180,General Setup,            Load Source Measures
+698,-10219,General Setup,        View Source Systems
+699,-10220,General Setup,            Configure Source Systems
+700,0,,    Goals
+701,-10184,Goals,        View Goal Adjustments
+702,-10185,Goals,            Configure Goal Adjustments
+703,-10182,Goals,        View Goals
+704,-10183,Goals,            Configure Goals
+705,0,,    Objectives
+706,-10180,Objectives,        View Objectives
+707,-10181,Objectives,            Configure Objectives
+708,0,,    Performance Plans
+709,-11183,Performance Plans,        View Performance Plans
+710,-11184,Performance Plans,            Configure Performance Plans
+711,0,,    Scorecards
+712,-10398,Scorecards,        Explore Scorecards
+713,-10201,Scorecards,            % Met Drilldown
+714,-10245,Scorecards,            Actual Value Drilldown
+715,-20978,Scorecards,            Explore Scorecards for Mobile
+716,-10202,Scorecards,            KPI Details
+717,-10332,Scorecards,            KPI Specific Drill Through
+718,-10199,Scorecards,            Peer Benchmark Drilldown
+719,-20806,Scorecards,            Show Improvement Opportunities
+720,-10362,Scorecards,            View/Configure Scorecards Filter on Explore Scorecards
+721,-10200,Scorecards,            View % Met
+722,-10363,Scorecards,            View Events on Graph
+723,-10280,Scorecards,                View Goal
+724,-10198,Scorecards,                View Peer Benchmark
+725,-10281,Scorecards,                View Score
+726,-10212,Scorecards,        View Assessments
+727,-10214,Scorecards,            Configure Assessments
+728,-10350,Scorecards,        View Contact Viewer Interactions
+729,-10430,Scorecards,        View Extensible Dimension in Scorecard
+730,-10500,Scorecards,        View Intraday KPIs
+731,-11185,Scorecards,        View My Performance Plan
+732,-10397,Scorecards,        View My Scorecard
+733,-10195,Scorecards,            % Met Drilldown
+734,-10244,Scorecards,            Actual Value Drilldown
+735,-10196,Scorecards,            KPI Details
+736,-10627,Scorecards,            KPI Specific Drill Through
+737,-10193,Scorecards,            Peer Benchmark Drilldown
+738,-20805,Scorecards,            Show Improvement Opportunities
+739,-10407,Scorecards,            View/Configure Scorecards Filter on My Scorecard
+740,-10194,Scorecards,            View % Met
+741,-10628,Scorecards,            View Events on Graph
+742,-10278,Scorecards,            View Goal
+743,-20811,Scorecards,                View My Scorecard for Mobile
+744,-10361,Scorecards,                View Organization KPIs
+745,-10192,Scorecards,                View Peer Benchmark
+746,-10359,Scorecards,                View Person KPIs
+747,-10360,Scorecards,                View Roll-Up KPIs
+748,-10279,Scorecards,                View Score
+749,-10215,Scorecards,        View Notes
+750,-10216,Scorecards,            Configure Notes
+751,-10431,Scorecards,                Broadcast Notes
+752,-10349,Scorecards,        View Quality Monitoring Interactions
+753,0,,    Scorecard Settings
+754,-10186,Scorecard Settings,        View Scorecard Settings
+755,-10187,Scorecard Settings,            Configure Scorecard Settings
+756,0,,    Scores
+757,-10188,Scores,        Configure Scores
+758,0,,    View KPIs
+759,-10178,View KPIs,        View KPIs
+760,-10179,View KPIs,            Configure KPIs Full
+761,-10225,View KPIs,            Configure KPIs Limited
+762,-10221,View KPIs,            Import/Export KPIs
+763,0,,  Time Record Export
+764,0,,    Time Record Management
+765,-10010,Time Record Management,        Approve Time Records
+766,-10067,Time Record Management,        View Employee Time Intervals
+767,-10068,Time Record Management,            Edit Employee Time Intervals

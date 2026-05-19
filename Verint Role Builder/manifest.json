@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Verint Role Builder",
+  "version": "0.1.0",
+  "description": "Create or overwrite a Verint role from a multi-role config CSV, on the Roles Setup page.",
+  "permissions": ["activeTab", "tabs", "storage"],
+  "host_permissions": ["https://mv311ver03d.corp.toronto.ca/*"],
+  "background": { "service_worker": "src/background.js" },
+  "action": { "default_popup": "src/popup/popup.html", "default_title": "Verint Role Builder" },
+  "content_scripts": [
+    {
+      "matches": ["https://mv311ver03d.corp.toronto.ca/*"],
+      "all_frames": false,
+      "run_at": "document_idle",
+      "js": [
+        "src/lib/protocol.js",
+        "src/content/apply.js",
+        "src/content/bridge.js"
+      ]
+    }
+  ]
+}

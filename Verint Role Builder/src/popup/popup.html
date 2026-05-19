@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <h1>Verint Role Builder</h1>
+
+    <section id="uploadStep">
+      <label class="filebtn">
+        Upload role config CSV
+        <input type="file" id="file" accept=".csv,text/csv" hidden />
+      </label>
+      <label class="opt">
+        <input type="checkbox" id="autoPromote" checked />
+        Auto-enable required parent privileges
+      </label>
+    </section>
+
+    <section id="report" class="hidden"></section>
+
+    <section id="pickStep" class="hidden">
+      <label for="role">Role to create / overwrite</label>
+      <select id="role"></select>
+      <div class="row">
+        <button id="continueBtn">Continue</button>
+        <button id="cancelBtn" class="ghost">Cancel</button>
+      </div>
+    </section>
+
+    <section id="confirm" class="hidden">
+      <p id="confirmMsg"></p>
+      <div class="row">
+        <button id="yesBtn">Yes</button>
+        <button id="noBtn" class="ghost">No</button>
+      </div>
+    </section>
+
+    <section id="status" class="hidden"></section>
+
+    <script src="../lib/protocol.js"></script>
+    <script src="../lib/csv.js"></script>
+    <script src="../lib/privileges.js"></script>
+    <script src="../lib/validate.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
