@@ -92,25 +92,48 @@
     state.master = VRB.buildMaster(txt);
   }
 
-  async function onFile(ev) {
-    const f = ev.target.files[0];
-    if (!f) return;
-    reset();
+  // Silently recon the active tab on popup open and cache the result. The
+  // upload-button click gate (onUploadClick) uses this cache to decide whether
+  // to open the OS file picker or surface "Roles Setup is required" instead.
+  async function reconPageSilent() {
+    try {
+      state.pageInfo = await sendTab({ type: VRB.MSG.CHECK_PAGE });
+    } catch (e) {
+      state.pageInfo = { error: String((e && e.message) || e) };
+    }
+  }
 
-    // 1. page precondition — before any parsing
-    const pc = await sendTab({ type: VRB.MSG.CHECK_PAGE });
-    if (pc.error) {
+  // Capture-phase click handler on the hidden file input: if the active tab
+  // isn't Roles Setup, block the OS file picker and tell the user. Runs before
+  // the input's default click action, so preventDefault() suppresses it.
+  function onUploadClick(ev) {
+    const pc = state.pageInfo;
+    // Re-fire the recon for the NEXT click — if the user navigates to Roles
+    // Setup while the popup is still open, their second click will see fresh
+    // state. We don't await; this click decides from the cached pc above.
+    reconPageSilent();
+    if (!pc) {
+      ev.preventDefault();
       report(
-        '<span class="err">Couldn’t reach the Verint page (' +
+        '<span class="err">Still checking the active tab — try again in a moment.</span>',
+        "err"
+      );
+      return;
+    }
+    if (pc.error) {
+      ev.preventDefault();
+      report(
+        '<span class="err"><b>Roles Setup is required.</b> Couldn’t reach the Verint page (' +
           esc(pc.error) +
-          "). Reload the Verint tab, make sure it’s the active tab, then upload again.</span>",
+          "). Reload the Verint tab, make sure it’s the active tab, then try again.</span>",
         "err"
       );
       return;
     }
     if (!pc.onPage) {
+      ev.preventDefault();
       report(
-        '<span class="err">Not detected as the Roles Setup page. Open User Management → Security → Roles Setup, then upload again.</span>\n\n' +
+        '<span class="err"><b>Roles Setup is required.</b> Open User Management → Security → Roles Setup, then click Upload again.</span>\n\n' +
           "diagnostics:\n" +
           esc(
             JSON.stringify(
@@ -129,8 +152,16 @@
       );
       return;
     }
+    // On page — let the file picker open. Clear any prior error report.
+    show("report", false);
+  }
 
-    // 2. parse + validate
+  async function onFile(ev) {
+    const f = ev.target.files[0];
+    if (!f) return;
+    reset();
+
+    // parse + validate
     const text = await f.text();
     const uploaded = VRB.parseCSV(text);
     const v = VRB.validateStructure(uploaded, state.master);
@@ -366,6 +397,7 @@
     } catch (_) {}
   }
 
+  $("file").addEventListener("click", onUploadClick);
   $("file").addEventListener("change", onFile);
   $("continueBtn").addEventListener("click", onContinue);
   $("cancelBtn").addEventListener("click", reset);
@@ -374,6 +406,7 @@
       navigator.clipboard.writeText($("lastTrace").textContent);
   });
   loadMaster();
+  reconPageSilent();
   showLastResult();
   showLastTrace();
 })();

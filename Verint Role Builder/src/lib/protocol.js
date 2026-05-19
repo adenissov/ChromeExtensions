@@ -4,7 +4,9 @@
 (function (root) {
   const VRB = (root.VRB = root.VRB || {});
 
-  VRB.HOST = "mv311ver03d.corp.toronto.ca";
+  // No HOST pin — manifest matches `https://*/wfo/*` so the extension works
+  // against any Verint Impact360 v15 host (LAB + PROD). Roles Setup detection
+  // is structural (frame src `role_setup_fs` / inner doc title), not by host.
   VRB.MASTER_PATH = "data/privilege-config-list.csv";
   VRB.TEST_PREFIX = "ZZ_CLAUDE_TEST_";
 
