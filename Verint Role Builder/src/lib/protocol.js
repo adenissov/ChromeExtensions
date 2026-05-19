@@ -15,6 +15,4 @@
     APPLY: "APPLY", // open editor/create, strict-mirror, save, verify
     PROGRESS: "PROGRESS", // bridge -> popup streaming updates
   };
-
-  VRB.PAGE_TITLE = "Verint - Roles Setup - Security - User Management";
 })(typeof self !== "undefined" ? self : this);

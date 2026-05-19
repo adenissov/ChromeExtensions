@@ -1,13 +1,21 @@
 // Checkbox engine — operates on the Role Setup Form document (the
-// oRightPaneContent iframe). Strict-mirror: every privID checkbox is driven to
-// (id in yesSet) ? on : off, including live extras with no CSV row. Privilege
-// checkboxes appear in DOM in NLine/tree order, so DOM order = parent-before-
-// child (used for safe enable/disable ordering — no depth map needed).
+// oRightPaneContent iframe). Strict-mirror, scoped to the CSV's domain:
+// every IN-MASTER privID checkbox is driven to (id in yesSet) ? on : off.
+// Live extras with no master row (~20 of 696) are LEFT AS-IS — Verint
+// manages them via module bundles / license-gated cascades, and forcing
+// them OFF makes the engine fight Verint over checkboxes the CSV never
+// named. Privilege checkboxes appear in DOM in NLine/tree order, so DOM
+// order = parent-before-child (used for safe enable/disable ordering — no
+// depth map needed).
 (function (root) {
   const VRB = (root.VRB = root.VRB || {});
 
   const PRIV_SEL = 'input[name="privID"]';
   const BATCH = 25;
+  // Fixed delay between the set pass and the verify scan — lets Verint's
+  // legacy widget cascade/re-render finish before we read. 1-3 s per spec;
+  // 2 s is the middle of the band.
+  const POST_APPLY_DELAY_MS = 2000;
   const isNegId = (el) => /^-\d+$/.test(el.id);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const raf = () =>
@@ -52,15 +60,44 @@
         new MouseEvent(t, { bubbles: true, cancelable: true, view: doc.defaultView })
       );
     if (el.checked !== want) {
-      el.checked = want; // fallback for the legacy widget
+      // fallback for the legacy widget — force state + notify. NOT another
+      // click: a synthetic click on a checkbox toggles it again, flipping it
+      // back off `want`.
+      el.checked = want;
       el.dispatchEvent(new Event("change", { bubbles: true }));
-      el.dispatchEvent(new MouseEvent("click", { bubbles: true, view: doc.defaultView }));
     }
   }
 
-  // Drive the form to the strict-mirror desired state.
-  // yesSet: Set<number>. Returns { changed, skippedAbsent, mismatches }.
-  async function applyStrictMirror(doc, yesSet, progress) {
+  const wanted = (el, yesSet) => yesSet.has(parseInt(el.id, 10));
+
+  // Snapshot of every non-disabled, in-master privID checkbox vs. the desired
+  // set. Checkboxes whose id is NOT in `masterSet` are "live extras" the CSV
+  // has no row for (the ~20 of 696 live boxes absent from the master) — they
+  // are out of the CSV's domain, never touched, never counted as mismatches.
+  function mismatchList(doc, yesSet, masterSet) {
+    const out = [];
+    for (const el of listChecks(doc)) {
+      const pid = parseInt(el.id, 10);
+      if (masterSet && !masterSet.has(pid)) continue;
+      if (el.disabled) continue;
+      const want = yesSet.has(pid);
+      if (el.checked !== want) out.push({ id: el.id, want });
+    }
+    return out;
+  }
+
+  // Drive the form's IN-MASTER checkboxes to the strict-mirror desired state,
+  // wait a fixed delay (POST_APPLY_DELAY_MS) so Verint's cascade/re-render
+  // can finish, then verify by scanning all in-master checkboxes once.
+  // Returns { changed, skippedAbsent, skippedDisabled, skippedNonMaster,
+  // mismatches }. `mismatches` is the verify-scan truth — the caller uses it
+  // as a transactional gate (save only if empty, else roll back). Out-of-
+  // CSV-domain checkboxes (live extras not in master) are LEFT AS-IS;
+  // Verint manages them and they cannot fail the gate. `disabled` checkboxes
+  // are Verint-managed and skipped, never a mismatch. Single-pass on
+  // purpose: any leftover discrepancy is reported by name, never silently
+  // retried away.
+  async function applyStrictMirror(doc, yesSet, masterSet, progress) {
     await waitReady(doc);
     expandTree(doc);
     await sleep(300);
@@ -68,6 +105,8 @@
     const checks = listChecks(doc);
     const present = new Set(checks.map((c) => parseInt(c.id, 10)));
     const skippedAbsent = [...yesSet].filter((id) => !present.has(id));
+    const skippedDisabled = [];
+    const skippedNonMaster = [];
 
     let changed = 0;
     let done = 0;
@@ -75,16 +114,23 @@
     const enable = [];
     const disable = [];
     for (const el of checks) {
-      const want = yesSet.has(parseInt(el.id, 10));
+      const pid = parseInt(el.id, 10);
+      if (!masterSet.has(pid)) {
+        skippedNonMaster.push(el.id);
+        continue;
+      }
+      const want = yesSet.has(pid);
       if (el.checked === want) continue;
+      if (el.disabled) {
+        skippedDisabled.push(el.id);
+        continue;
+      }
       (want ? enable : disable).push(el);
     }
     const work = enable.concat(disable.reverse());
 
     for (let i = 0; i < work.length; i++) {
-      const el = work[i];
-      const want = yesSet.has(parseInt(el.id, 10));
-      setCheckbox(el, want);
+      setCheckbox(work[i], wanted(work[i], yesSet));
       changed++;
       if (++done % BATCH === 0) {
         await raf();
@@ -92,23 +138,18 @@
       }
     }
 
-    // reconcile UI cascades (max 2 passes)
-    let mismatches = [];
-    for (let pass = 0; pass < 2; pass++) {
-      mismatches = [];
-      for (const el of listChecks(doc)) {
-        const want = yesSet.has(parseInt(el.id, 10));
-        if (el.checked !== want) mismatches.push({ id: el.id, want });
-      }
-      if (!mismatches.length) break;
-      for (const m of mismatches) {
-        const el = doc.getElementById(m.id);
-        if (el) setCheckbox(el, m.want);
-      }
-      await raf();
-    }
+    // Fixed delay so Verint's cascade/re-render can finish, then verify.
+    if (progress) progress({ phase: "verify" });
+    await sleep(POST_APPLY_DELAY_MS);
+    const mismatches = mismatchList(doc, yesSet, masterSet);
 
-    return { changed, skippedAbsent, mismatches };
+    return {
+      changed,
+      skippedAbsent,
+      skippedDisabled,
+      skippedNonMaster,
+      mismatches,
+    };
   }
 
   // Read current state into a Set of enabled PrivilegeIDs (for verify).
@@ -125,6 +166,7 @@
     waitReady,
     expandTree,
     applyStrictMirror,
+    mismatchList,
     readEnabled,
   };
 })(typeof self !== "undefined" ? self : this);

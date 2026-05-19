@@ -77,35 +77,16 @@
     }
   }
 
-  // Build the apply plan for one role column.
-  // autoPromote=true: enable required parents. false: downgrade the offending
-  // children to disabled and list them.
-  function buildPlan(uploaded, master, colIdx, autoPromote) {
+  // Build the apply plan for one role column: the exact set of PrivilegeIDs
+  // marked "Yes". Verint enables any required parent itself, so no promotion.
+  function buildPlan(uploaded, master, colIdx) {
     const yes = new Set();
     for (let i = 0; i < master.rows.length; i++) {
       const m = master.rows[i];
       if (m.isGroup) continue;
       if (uploaded.rows[i][colIdx] === "Yes") yes.add(m.privId);
     }
-    const { promoted, conflicts } = VRB.computePromotions(master, yes);
-
-    let effective;
-    let downgraded = [];
-    if (autoPromote) {
-      effective = new Set([...yes, ...promoted]);
-    } else {
-      const offending = new Set(conflicts.map((c) => c.childId));
-      effective = new Set([...yes].filter((id) => !offending.has(id)));
-      downgraded = [...offending];
-    }
-
-    return {
-      yesIds: [...effective],
-      rawYesCount: yes.size,
-      promoted: [...promoted],
-      conflicts,
-      downgraded,
-    };
+    return { yesIds: [...yes], yesCount: yes.size };
   }
 
   VRB.validateStructure = validateStructure;

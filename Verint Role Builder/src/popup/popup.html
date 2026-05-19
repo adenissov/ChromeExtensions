@@ -12,10 +12,6 @@
         Upload role config CSV
         <input type="file" id="file" accept=".csv,text/csv" hidden />
       </label>
-      <label class="opt">
-        <input type="checkbox" id="autoPromote" checked />
-        Auto-enable required parent privileges
-      </label>
     </section>
 
     <section id="report" class="hidden"></section>
@@ -38,6 +34,12 @@
     </section>
 
     <section id="status" class="hidden"></section>
+
+    <details id="lastTraceWrap" class="hidden" open>
+      <summary>Last run trace</summary>
+      <pre id="lastTrace"></pre>
+      <button id="copyTrace" class="ghost">Copy</button>
+    </details>
 
     <script src="../lib/protocol.js"></script>
     <script src="../lib/csv.js"></script>
