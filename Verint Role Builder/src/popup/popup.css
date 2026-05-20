@@ -6,12 +6,13 @@ body {
   padding: 14px;
   color: #1f2328;
 }
-h1 { font-size: 15px; margin: 0 0 12px; }
+h1 { font-size: 15px; margin: 0 0 12px; text-align: center; }
 section { margin-bottom: 12px; }
 .hidden { display: none; }
-.row { display: flex; gap: 8px; margin-top: 10px; }
-.col { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.row { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }
+.col { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; align-items: center; }
 #modeStep button { width: 50%; }
+#uploadStep { text-align: center; }
 button {
   font: inherit;
   padding: 6px 14px;
@@ -42,6 +43,7 @@ select { width: 100%; padding: 6px; margin-top: 4px; }
   white-space: pre-wrap;
   font-family: ui-monospace, Consolas, monospace;
   font-size: 12px;
+  text-align: center;
 }
 .err { color: #b42318; }
 .ok { color: #1a7f37; }
