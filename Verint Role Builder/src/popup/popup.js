@@ -85,6 +85,23 @@
     $("file").value = "";
   }
 
+  // The page-precondition message used by both Export and Import clicks.
+  // Single line per the spec; the diagnostics block stays available for the
+  // upload-click gate (defence in depth) when the user reaches that step.
+  function reportNotOnRolesSetup() {
+    report(
+      '<span class="err">For extension to work, open it on the "Roles Setup" page.</span>',
+      "err"
+    );
+  }
+
+  // True iff cached recon confirms the active tab is on Roles Setup. Used by
+  // the Export/Import gate; the upload-click gate uses the same cache.
+  function pageOk() {
+    const pc = state.pageInfo;
+    return !!(pc && !pc.error && pc.onPage);
+  }
+
   async function loadMaster() {
     const txt = await fetch(chrome.runtime.getURL(VRB.MASTER_PATH)).then((r) =>
       r.text()
@@ -279,12 +296,6 @@
     return m ? `${m.name.trim()} (${id})` : String(id);
   }
 
-  function traceBlock(res) {
-    return res.trace && res.trace.length
-      ? "\n\n--- trace ---\n" + esc(res.trace.join("\n"))
-      : "";
-  }
-
   function renderResult(res) {
     if (res.error || res.ok === false) {
       const head =
@@ -318,8 +329,7 @@
       status(
         '<b class="err">❌ Failed.</b> ' +
           esc(head) +
-          (extra.length ? "\n" + esc(extra.join("\n")) : "") +
-          traceBlock(res),
+          (extra.length ? "\n" + esc(extra.join("\n")) : ""),
         "err"
       );
       return;
@@ -347,7 +357,7 @@
           res.skippedDisabled.map(privLabel).join(", ")
       );
     const clean = !(res.skippedAbsent && res.skippedAbsent.length);
-    status(esc(lines.join("\n")) + traceBlock(res), clean ? "ok" : "warn");
+    status(esc(lines.join("\n")), clean ? "ok" : "warn");
   }
 
   // Re-render the most recent run's outcome on popup open — the popup is
@@ -380,33 +390,31 @@
     } catch (_) {}
   }
 
-  async function showLastTrace() {
-    try {
-      const { vrbTrace, vrbTraceAt } = await chrome.storage.local.get([
-        "vrbTrace",
-        "vrbTraceAt",
-      ]);
-      if (vrbTrace && vrbTrace.length) {
-        $("lastTrace").textContent =
-          "(" +
-          (vrbTraceAt ? new Date(vrbTraceAt).toLocaleTimeString() : "?") +
-          ")\n" +
-          vrbTrace.join("\n");
-        show("lastTraceWrap", true);
-      }
-    } catch (_) {}
+  // Export/Import mode buttons — both gate on the cached page recon. If not
+  // on Roles Setup, surface the single-line precondition and stay on the mode
+  // step. Each click also re-fires the recon so a user who navigates while
+  // the popup is open can retry without reopening it.
+  function onExportClick() {
+    reconPageSilent();
+    if (!pageOk()) return reportNotOnRolesSetup();
+    show("report", false);
+    status('<i>Export — not implemented yet.</i>', "warn");
+  }
+  function onImportClick() {
+    reconPageSilent();
+    if (!pageOk()) return reportNotOnRolesSetup();
+    show("report", false);
+    show("modeStep", false);
+    show("uploadStep", true);
   }
 
+  $("exportBtn").addEventListener("click", onExportClick);
+  $("importBtn").addEventListener("click", onImportClick);
   $("file").addEventListener("click", onUploadClick);
   $("file").addEventListener("change", onFile);
   $("continueBtn").addEventListener("click", onContinue);
   $("cancelBtn").addEventListener("click", reset);
-  $("copyTrace").addEventListener("click", () => {
-    navigator.clipboard &&
-      navigator.clipboard.writeText($("lastTrace").textContent);
-  });
   loadMaster();
   reconPageSilent();
   showLastResult();
-  showLastTrace();
 })();

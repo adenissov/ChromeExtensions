@@ -20,6 +20,10 @@
       });
     } catch (_) {}
   }
+  // Debug output goes to the Verint page's DevTools console (right-click the
+  // page → Inspect → Console, filter "[VRB]"). The in-memory `trace` is still
+  // attached to the response object so popup-side persistence (vrbLastResult)
+  // can surface diagnostics that survive the native unsaved-changes dialog.
   const log = (...a) => {
     const line =
       new Date().toISOString().slice(11, 23) +
@@ -27,11 +31,6 @@
       a.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ");
     trace.push(line);
     try { console.log("[VRB]", line); } catch (_) {}
-    // Persist immediately so the trace survives the native unsaved-changes
-    // prompt / a page navigation / the popup closing.
-    try {
-      chrome.storage.local.set({ vrbTrace: trace, vrbTraceAt: Date.now() });
-    } catch (_) {}
   };
 
   // ---- frame access -------------------------------------------------------

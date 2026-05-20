@@ -10,6 +10,8 @@ h1 { font-size: 15px; margin: 0 0 12px; }
 section { margin-bottom: 12px; }
 .hidden { display: none; }
 .row { display: flex; gap: 8px; margin-top: 10px; }
+.col { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+#modeStep button { width: 50%; }
 button {
   font: inherit;
   padding: 6px 14px;

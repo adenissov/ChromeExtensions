@@ -5,9 +5,16 @@
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <h1>Verint Role Builder</h1>
+    <h1>Verint Role export/import</h1>
 
-    <section id="uploadStep">
+    <section id="modeStep">
+      <div class="col">
+        <button id="exportBtn">Export</button>
+        <button id="importBtn">Import</button>
+      </div>
+    </section>
+
+    <section id="uploadStep" class="hidden">
       <label class="filebtn">
         Upload role config CSV
         <input type="file" id="file" accept=".csv,text/csv" hidden />
@@ -34,12 +41,6 @@
     </section>
 
     <section id="status" class="hidden"></section>
-
-    <details id="lastTraceWrap" class="hidden" open>
-      <summary>Last run trace</summary>
-      <pre id="lastTrace"></pre>
-      <button id="copyTrace" class="ghost">Copy</button>
-    </details>
 
     <script src="../lib/protocol.js"></script>
     <script src="../lib/csv.js"></script>
