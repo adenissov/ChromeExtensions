@@ -21,6 +21,15 @@
       </label>
     </section>
 
+    <section id="exportStep" class="hidden">
+      <label for="exportRole">Role to export</label>
+      <select id="exportRole"></select>
+      <div class="row">
+        <button id="exportConfirmBtn">Export</button>
+        <button id="exportCancelBtn" class="ghost">Cancel</button>
+      </div>
+    </section>
+
     <section id="report" class="hidden"></section>
 
     <section id="pickStep" class="hidden">
@@ -46,6 +55,7 @@
     <script src="../lib/csv.js"></script>
     <script src="../lib/privileges.js"></script>
     <script src="../lib/validate.js"></script>
+    <script src="../lib/csv-export.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

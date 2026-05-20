@@ -16,5 +16,7 @@
     GET_CONTEXT: "GET_CONTEXT", // owner org + existence/flags for a role
     APPLY: "APPLY", // open editor/create, strict-mirror, save, verify
     PROGRESS: "PROGRESS", // bridge -> popup streaming updates
+    LIST_ROLES: "LIST_ROLES", // owner org + role names under it
+    EXPORT_READ: "EXPORT_READ", // open editor (read-only) -> enabled privIds -> cancel
   };
 })(typeof self !== "undefined" ? self : this);

@@ -88,6 +88,24 @@
     );
   }
 
+  // All role names whose grid OwnerOrg cell matches the currently selected
+  // org. The right pane bleeds roles across the org hierarchy, so we filter
+  // by td[3] (recon order) rather than trust the visible row set wholesale.
+  function rolesForOrg(org) {
+    const R = rightDoc();
+    if (!R) return [];
+    const out = new Set();
+    for (const tr of R.querySelectorAll("tr[itemname]")) {
+      const tds = tr.querySelectorAll("td");
+      const owner = (tds[3] && tds[3].textContent.trim()) || "";
+      if (owner === org) {
+        const name = tr.getAttribute("itemname");
+        if (name) out.add(name);
+      }
+    }
+    return [...out].sort((a, b) => a.localeCompare(b));
+  }
+
   function rowInfo(tr) {
     const td = [...tr.querySelectorAll("td")].map((x) => x.textContent.trim());
     return {
@@ -147,6 +165,51 @@
       isDefault: match ? match.isDefault : false,
       isAdmin: match ? match.isAdmin : false,
     };
+  }
+
+  async function listRoles() {
+    if (!isRolesSetup()) return { error: "not_on_roles_setup" };
+    const org = selectedOrg();
+    if (!org) return { error: "no_org_selected" };
+    const roles = rolesForOrg(org);
+    return { ownerOrg: org, roles };
+  }
+
+  // Read-only counterpart to apply(): opens the editor for one role, reads
+  // every enabled negative-id checkbox, then cancels back to the grid. The
+  // form is never dirtied (we only read .checked, no setCheckbox), so Cancel
+  // is prompt-free (no Verint native unsaved-changes guard).
+  async function exportRead({ roleName }) {
+    trace = [];
+    if (!isRolesSetup()) return { error: "not_on_roles_setup" };
+    const org = selectedOrg();
+    if (!org) return { error: "no_org_selected" };
+    if (!gridRows(roleName).length)
+      return { error: "role_not_in_grid", roleName };
+    log("exportRead start", { roleName, org });
+    let R;
+    try {
+      R = await openEditor(roleName);
+    } catch (e) {
+      log("exportRead openEditor failed", String((e && e.message) || e));
+      return { error: String((e && e.message) || e) };
+    }
+    log("exportRead form open", { title: R && R.title });
+    try {
+      await E.waitReady(R);
+      E.expandTree(R);
+      await sleep(300);
+    } catch (e) {
+      log("exportRead waitReady failed", String((e && e.message) || e));
+      await cancelForm(R);
+      await gridBack();
+      return { error: String((e && e.message) || e) };
+    }
+    const enabled = [...E.readEnabled(R)];
+    log("exportRead read", { enabledCount: enabled.length });
+    await cancelForm(R);
+    await gridBack();
+    return { ownerOrg: org, roleName, enabledIds: enabled };
   }
 
   function progress(p) {
@@ -370,6 +433,19 @@
           return sendResponse(pageInfo());
         if (msg.type === VRB.MSG.GET_CONTEXT)
           return sendResponse(await getContext(msg));
+        if (msg.type === VRB.MSG.LIST_ROLES)
+          return sendResponse(await listRoles());
+        if (msg.type === VRB.MSG.EXPORT_READ) {
+          let r;
+          try {
+            r = await exportRead(msg);
+          } catch (e) {
+            log("exportRead threw", String((e && e.message) || e));
+            r = { error: String((e && e.message) || e) };
+          }
+          if (r && typeof r === "object") r.trace = trace.slice();
+          return sendResponse(r);
+        }
         if (msg.type === VRB.MSG.APPLY) {
           let r;
           try {

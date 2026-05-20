@@ -81,8 +81,19 @@
   }
 
   function reset() {
-    ["report", "pickStep", "confirm", "status"].forEach((i) => show(i, false));
+    ["report", "pickStep", "confirm", "status", "exportStep"].forEach((i) =>
+      show(i, false)
+    );
     $("file").value = "";
+  }
+
+  // Back to the mode-select screen from either the upload step or the export
+  // step. Used by exportCancel and after a successful export.
+  function backToMode() {
+    ["uploadStep", "exportStep", "report", "status"].forEach((i) =>
+      show(i, false)
+    );
+    show("modeStep", true);
   }
 
   // The page-precondition message used by both Export and Import clicks.
@@ -394,12 +405,110 @@
   // on Roles Setup, surface the single-line precondition and stay on the mode
   // step. Each click also re-fires the recon so a user who navigates while
   // the popup is open can retry without reopening it.
-  function onExportClick() {
+  async function onExportClick() {
     reconPageSilent();
     if (!pageOk()) return reportNotOnRolesSetup();
     show("report", false);
-    status('<i>Export — not implemented yet.</i>', "warn");
+    show("status", false);
+    status("<i>Loading roles…</i>");
+    const res = await sendTab({ type: VRB.MSG.LIST_ROLES });
+    if (res.error === "no_org_selected") {
+      show("status", false);
+      report(
+        '<span class="err">Select an organization in the Roles Setup left pane first.</span>',
+        "err"
+      );
+      return;
+    }
+    if (res.error) {
+      show("status", false);
+      report('<span class="err">Error: ' + esc(res.error) + "</span>", "err");
+      return;
+    }
+    if (!res.roles || !res.roles.length) {
+      show("status", false);
+      report(
+        '<span class="warn">No roles under "' + esc(res.ownerOrg) + '".</span>',
+        "warn"
+      );
+      return;
+    }
+    show("status", false);
+    const sel = $("exportRole");
+    sel.innerHTML = "";
+    res.roles.forEach((name) => {
+      const o = document.createElement("option");
+      o.value = name;
+      o.textContent = name;
+      sel.appendChild(o);
+    });
+    state.exportOrg = res.ownerOrg;
+    show("modeStep", false);
+    show("exportStep", true);
   }
+
+  async function onExportConfirm() {
+    const roleName = $("exportRole").value;
+    if (!roleName) return;
+    show("exportStep", false);
+    show("report", false);
+    status('<i>Opening editor for "' + esc(roleName) + '"…</i>');
+
+    const res = await sendTab({
+      type: VRB.MSG.EXPORT_READ,
+      roleName,
+    });
+    if (res.error) {
+      status(
+        '<span class="err">Export failed: ' + esc(res.error) + "</span>",
+        "err"
+      );
+      show("exportStep", true); // let the user retry / pick another role
+      return;
+    }
+
+    const enabledSet = new Set(res.enabledIds || []);
+    const csv = VRB.buildExportCsv(state.master, roleName, enabledSet);
+    const filename = VRB.exportFilename(roleName);
+    // Use a data URL rather than `URL.createObjectURL(blob)` so the download
+    // remains valid even if the Save-As dialog closes the popup before the
+    // user picks a destination — blob URLs are scoped to the popup page that
+    // created them and would 404 once that page is torn down. CSV is small
+    // (~30 KB); base64 overhead is irrelevant. UTF-8 preserved via
+    // FileReader.readAsDataURL.
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const dataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => reject(fr.error || new Error("FileReader failed"));
+      fr.readAsDataURL(blob);
+    });
+    try {
+      await chrome.downloads.download({
+        url: dataUrl,
+        filename,
+        saveAs: true,
+      });
+      status(
+        '<span class="ok">✅ Export ready — choose a destination in the browser dialog.</span>\n' +
+          esc(filename),
+        "ok"
+      );
+    } catch (e) {
+      status(
+        '<span class="err">Download failed: ' +
+          esc(String((e && e.message) || e)) +
+          "</span>",
+        "err"
+      );
+      show("exportStep", true);
+    }
+  }
+
+  function onExportCancel() {
+    backToMode();
+  }
+
   function onImportClick() {
     reconPageSilent();
     if (!pageOk()) return reportNotOnRolesSetup();
@@ -410,6 +519,8 @@
 
   $("exportBtn").addEventListener("click", onExportClick);
   $("importBtn").addEventListener("click", onImportClick);
+  $("exportConfirmBtn").addEventListener("click", onExportConfirm);
+  $("exportCancelBtn").addEventListener("click", onExportCancel);
   $("file").addEventListener("click", onUploadClick);
   $("file").addEventListener("change", onFile);
   $("continueBtn").addEventListener("click", onContinue);

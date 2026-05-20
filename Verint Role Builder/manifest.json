@@ -3,7 +3,7 @@
   "name": "Verint Role Builder",
   "version": "0.1.0",
   "description": "Create or overwrite a Verint role from a multi-role config CSV, on the Roles Setup page.",
-  "permissions": ["activeTab", "tabs", "storage", "scripting"],
+  "permissions": ["activeTab", "tabs", "storage", "scripting", "downloads"],
   "host_permissions": ["https://*/wfo/*"],
   "background": { "service_worker": "src/background.js" },
   "action": { "default_popup": "src/popup/popup.html", "default_title": "Verint Role Builder" },
