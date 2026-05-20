@@ -12,10 +12,17 @@
   // a dirty form triggers Verint's native confirm, which steals focus and
   // closes the MV3 popup). Storing here lets the popup re-render the
   // diagnostic on its next open.
-  async function persistResult(roleName, mode, r) {
+  async function persistResult(sourceRoleName, targetRoleName, mode, r) {
     try {
       await chrome.storage.local.set({
-        vrbLastResult: { ...r, roleName, mode, trace: trace.slice() },
+        vrbLastResult: {
+          ...r,
+          sourceRoleName,
+          targetRoleName,
+          roleName: targetRoleName,
+          mode,
+          trace: trace.slice(),
+        },
         vrbLastResultAt: Date.now(),
       });
     } catch (_) {}
@@ -88,20 +95,15 @@
     );
   }
 
-  // All role names whose grid OwnerOrg cell matches the currently selected
-  // org. The right pane bleeds roles across the org hierarchy, so we filter
-  // by td[3] (recon order) rather than trust the visible row set wholesale.
-  function rolesForOrg(org) {
+  // Every role name currently rendered in the right-pane grid, deduped and
+  // alpha-sorted. No OwnerOrg filter — Export lists whatever the grid shows.
+  function gridRoles() {
     const R = rightDoc();
     if (!R) return [];
     const out = new Set();
     for (const tr of R.querySelectorAll("tr[itemname]")) {
-      const tds = tr.querySelectorAll("td");
-      const owner = (tds[3] && tds[3].textContent.trim()) || "";
-      if (owner === org) {
-        const name = tr.getAttribute("itemname");
-        if (name) out.add(name);
-      }
+      const name = tr.getAttribute("itemname");
+      if (name) out.add(name);
     }
     return [...out].sort((a, b) => a.localeCompare(b));
   }
@@ -169,10 +171,7 @@
 
   async function listRoles() {
     if (!isRolesSetup()) return { error: "not_on_roles_setup" };
-    const org = selectedOrg();
-    if (!org) return { error: "no_org_selected" };
-    const roles = rolesForOrg(org);
-    return { ownerOrg: org, roles };
+    return { roles: gridRoles() };
   }
 
   // Read-only counterpart to apply(): opens the editor for one role, reads
@@ -313,21 +312,32 @@
     return { ok: false, reason: "save_not_committed" };
   }
 
-  async function apply({ mode, roleName, description, yesIds, masterIds }) {
+  async function apply({
+    mode,
+    sourceRoleName,
+    targetRoleName,
+    roleName, // legacy single-name field; tolerated if a caller still sends it
+    description,
+    yesIds,
+    masterIds,
+  }) {
     if (!isRolesSetup()) return { error: "not_on_roles_setup" };
+    const tgt = targetRoleName || roleName;
+    const src = sourceRoleName || tgt;
     const yesSet = new Set(yesIds);
     const masterSet = new Set(masterIds);
     log("apply start", {
       mode,
-      roleName,
+      sourceRoleName: src,
+      targetRoleName: tgt,
       yesCount: yesSet.size,
       masterCount: masterSet.size,
     });
 
     let R =
       mode === "create"
-        ? await openCreate(roleName, description)
-        : await openEditor(roleName);
+        ? await openCreate(tgt, description || tgt)
+        : await openEditor(tgt);
     log("form open", { title: R && R.title });
 
     progress({ phase: "tree" });
@@ -352,7 +362,7 @@
         skippedAbsent: res.skippedAbsent,
         skippedNonMaster: res.skippedNonMaster || [],
       };
-      await persistResult(roleName, mode, out);
+      await persistResult(src, tgt, mode, out);
       await cancelForm(R);
       await gridBack();
       return out;
@@ -382,7 +392,7 @@
         skippedNonMaster: res.skippedNonMaster || [],
         mismatches: finalMiss.slice(0, 50),
       };
-      await persistResult(roleName, mode, out);
+      await persistResult(src, tgt, mode, out);
       await cancelForm(R);
       await gridBack();
       return out;
@@ -403,7 +413,7 @@
         skippedAbsent: res.skippedAbsent,
         skippedNonMaster: res.skippedNonMaster || [],
       };
-      await persistResult(roleName, mode, out);
+      await persistResult(src, tgt, mode, out);
       await cancelForm(rightDoc());
       await gridBack();
       return out;
@@ -422,7 +432,7 @@
       skippedNonMaster: res.skippedNonMaster || [],
       mismatches: [],
     };
-    await persistResult(roleName, mode, out);
+    await persistResult(src, tgt, mode, out);
     return out;
   }
 

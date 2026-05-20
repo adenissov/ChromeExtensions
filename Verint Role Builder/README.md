@@ -34,16 +34,16 @@ to already be on the Roles Setup page; neither auto-navigates.
 - Checks whether that role already exists under that org:
   - **Exists** → asks "overwrite? yes/no"; on yes, sets its privilege
     checkboxes to match the file column and saves.
-  - **Not found** → asks "create it? yes/no"; on yes, creates the role then
-    applies the column.
+  - **Not found** → silently creates the role under the confirmed org and
+    applies the column (the owner-org confirm already gated this).
 - Applies the chosen column **verbatim** — it does not add or infer any
   privilege. (Verint's own UI enables a required parent when you enable a
   child; the tool does not second-guess that.)
 - Verifies the result afterwards by re-reading every checkbox.
 
 **Export — does:**
-- Lists every role under the currently selected organization in the Roles
-  Setup left-pane tree, as a dropdown.
+- Lists all roles currently shown on the Roles Setup page (the right-pane
+  grid, regardless of which organization owns each role), as a dropdown.
 - For the role you pick, opens its editor, reads every privilege checkbox,
   cancels (no changes), and writes the result to a CSV.
 - Triggers a standard browser **Save As** dialog so you choose the
@@ -82,7 +82,7 @@ A multi-role matrix. Column layout (header names are fixed except the role
 columns):
 
 ```
-NLine, PrivilegeName, Module, <Role 1>, <Role 2>, … <Role N>, PrivilegeDescription
+NLine, PrivilegeName, Module, <Role 1>, <Role 2>, … <Role N>[, PrivilegeDescription]
 ```
 
 | Column | Meaning |
@@ -90,16 +90,17 @@ NLine, PrivilegeName, Module, <Role 1>, <Role 2>, … <Role N>, PrivilegeDescrip
 | `NLine` | Row number (do not change). Not a continuous run — **`445` is intentionally absent** (a quirk of the SQL that generates both this file and the master list); every future config file inherits the same gap. |
 | `PrivilegeName` | Privilege name. **Leading spaces matter** — they encode parent/child nesting; do not strip them. |
 | `Module` | Module the privilege belongs to. **Validated** against the master list. |
-| *(role columns)* | One column per role. Header = role name. Cell = `Yes` or `---`. **Any number of these, in any order**, between `Module` and `PrivilegeDescription`. |
-| `PrivilegeDescription` | Informational. **Not validated** (`NULL` on section rows). |
+| *(role columns)* | One column per role. Header = role name. Cell = `Yes` or `---`. **Any number of these, in any order**, after `Module`. |
+| `PrivilegeDescription` | **Optional** — kept for compatibility with `Roles Config.csv`; not required. If present, must be the **last** column. Informational, not validated (`NULL` on section rows). |
 
 Cell rules:
 - On a real privilege row: exactly `Yes` (enable) or `---` (disable).
 - On a section-header row (no module, e.g. `Adherence`): leave role cells
   blank — there is no checkbox there.
 - Do not add, remove, reorder, or rename privilege rows, and do not rename
-  `NLine` / `PrivilegeName` / `Module` / `PrivilegeDescription`. The extension
-  rejects the file if `NLine` + `PrivilegeName` + `Module` don't match the
+  `NLine` / `PrivilegeName` / `Module` (or `PrivilegeDescription`, if you
+  include it). The extension rejects the file if `NLine` + `PrivilegeName` +
+  `Module` don't match the
   built-in master list **in exact order** (this protects you from an
   out-of-date list).
 - Role-column headers must be non-empty and unique.
@@ -119,25 +120,35 @@ Cell rules:
    left-pane tree (this is the owner org the extension will use).
 2. Click the **Verint Role Builder** toolbar icon, then click **Import** on
    the mode-select screen.
-3. **Upload CSV** — pick your role configuration file. The extension first
-   checks you are on the Roles Setup page. **If you are not, it shows
-   "Open User Management → Security → Roles Setup, then retry" and stops** — it
-   does not parse the file and never navigates for you.
-4. Read the **validation report**:
-   - **Errors** (red) — structural problems vs. the master list. Blocks
-     everything until fixed.
-   - **Summary** — number of roles found, row count OK, etc.
-5. **Pick a role** from the dropdown of roles discovered in the file. You can
-   **Cancel** here and nothing happens.
+3. The OS **file picker opens immediately** (no intermediate "Upload" button)
+   — the popup shows an instructional line and dispatches the dialog for
+   you. The extension first checks you are on the Roles Setup page. **If
+   you are not, it shows "Open User Management → Security → Roles Setup,
+   then retry" and stops** — it does not parse the file and never
+   navigates for you. **Cancelling the picker returns to the
+   Export/Import mode-select screen** so you can pick a different mode
+   without reopening the popup.
+4. **Validation runs silently on success.** Only errors are reported, and
+   every error line is prefixed with the file name so it's obvious which
+   file failed. Structural problems vs. the master list block everything
+   until fixed.
+5. **Pick a role column** from the dropdown of roles discovered in the file.
+   Below the dropdown, a **Save as role name** input is pre-filled with the
+   column header — edit it to save the role under a different name (e.g. to
+   clone a role under a new name from an existing CSV column). The input
+   follows the dropdown until you edit it; after that it keeps your value.
+   You can **Cancel** here and nothing happens.
 6. The extension shows the **owner organization** it read from the page.
    Confirm it (or cancel).
-7. The extension checks whether that role exists under that org (matched by
-   both the role name and the grid's Owner Organization column):
+7. The extension checks whether **the target role name** exists under that
+   org (matched by both the role name and the grid's Owner Organization
+   column):
    - **Exists** → "Overwrite role *X* under *Org*? **Yes / No**". No = stop.
      If that role is a **Default Role** or an **Is-Admin** role, a second,
      risk-named confirmation is required before it proceeds.
-   - **Not found** → "Role *X* not found under *Org* — create it? **Yes /
-     No**". No = stop.
+   - **Not found** → the extension proceeds silently to create the role
+     under the confirmed org (no extra confirmation; the owner-org confirm
+     in step 6 already gated this).
 8. On **Yes**, the extension expands the privilege tree and makes the role
    **exactly match** the chosen column: every `Yes` privilege on, **everything
    else off** — including any privileges the role currently has that the CSV
@@ -158,10 +169,12 @@ Re-running the same file/role is safe and idempotent: the second run reports
 Export captures the current privileges of one existing role into a CSV file
 shaped like `Role Export Sample.csv`.
 
-1. On the Roles Setup page, **select the organization** whose role you want
-   to export in the left-pane tree.
+1. On the Roles Setup page, navigate so the role you want to export is
+   visible in the right-pane grid (selecting an organization on the left,
+   or using any built-in filter, controls what the grid shows).
 2. Click the **Verint Role Builder** toolbar icon → **Export**.
-3. A dropdown appears listing every role under that organization. Pick one.
+3. A dropdown appears listing all roles currently shown on the Roles Setup
+   page. Pick one.
 4. Click **Export** in the dialog. The extension opens the role's editor,
    reads every privilege checkbox, then cancels the editor (no change is
    saved — export is read-only).
@@ -243,10 +256,10 @@ are changed.)
 | Symptom | Likely cause / fix |
 |---|---|
 | "For extension to work, open it on the 'Roles Setup' page." | You clicked Export/Import while not on the Roles Setup page. Navigate to **User Management → Security → Roles Setup** and click the popup button again. |
-| Export dropdown is empty | The selected organization has no roles. Select a different org in the left-pane tree and reopen Export. |
+| Export dropdown is empty | The Roles Setup grid is currently empty. Adjust the left-pane org selection (or any grid filter) so roles are visible, then reopen Export. |
 | Export ran but no Save As dialog | Chrome's downloads UI is suppressed. Check `chrome://downloads` — the file still arrives in your default downloads folder. |
-| "Structure does not match master list" | Privilege rows added/removed/reordered/renamed, or a changed `NLine`/`PrivilegeName`/`Module`/header. Re-derive from the master list. |
-| "Could not find role columns" | Header isn't `NLine,PrivilegeName,Module,…,PrivilegeDescription`, or duplicate/empty role-column names. |
+| "Structure does not match master list" | Privilege rows added/removed/reordered/renamed, or a changed `NLine`/`PrivilegeName`/`Module`/header. Re-derive from the master list. Error lines are prefixed with `[<file name>]` to identify which upload failed. |
+| "Could not find role columns" | Header doesn't start with `NLine,PrivilegeName,Module,…` (with at least one role column after `Module`), or duplicate/empty role-column names. |
 | "Cell must be Yes or ---" | A role cell on a privilege row has another value. Fix the listed rows. |
 | Wrong owner org shown | The wrong organization is selected in the Roles Setup left-pane tree. Select the right one and reopen the popup. |
 | "Role not found" but it exists | It exists under a *different* org. Select that org in the left pane and retry. |
@@ -258,8 +271,9 @@ are changed.)
 ## 9. Glossary
 
 - **Privilege** — one Verint permission; one checkbox in the role editor.
-- **Role column** — one column in the CSV between `Module` and
-  `PrivilegeDescription`; its header is the role name.
+- **Role column** — one column in the CSV after `Module` (and before
+  `PrivilegeDescription` if that column is present); its header is the role
+  name.
 - **Owner organization** — the org a role belongs to; resolved from the Roles
   Setup left-pane selection.
 - **Parent/child** — `View X` is the parent of `Edit X`/`Configure X`;

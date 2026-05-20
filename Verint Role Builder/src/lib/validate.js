@@ -1,36 +1,34 @@
 // Structural validation of an uploaded multi-role config CSV against the
 // embedded master, plus per-role plan building (Yes set + auto-promote).
-// Uploaded schema: NLine, PrivilegeName, Module, <role columns...>,
-// PrivilegeDescription. Validate NLine + PrivilegeName + Module in exact
-// order vs master; PrivilegeDescription is NOT validated.
+// Uploaded schema: NLine, PrivilegeName, Module, <role columns...>
+// [, PrivilegeDescription]. Validate NLine + PrivilegeName + Module in exact
+// order vs master; PrivilegeDescription is optional and NOT validated.
 (function (root) {
   const VRB = (root.VRB = root.VRB || {});
   const ERR_CAP = 50;
 
-  function validateStructure(uploaded, master) {
+  function validateStructure(uploaded, master, fileName) {
     const errors = [];
+    const tag = fileName ? `[${fileName}] ` : "";
     const push = (m) => {
-      if (errors.length < ERR_CAP) errors.push(m);
+      if (errors.length < ERR_CAP) errors.push(tag + m);
     };
     const H = uploaded.header.map((h) => h);
 
-    const iNLine = H.indexOf("NLine");
-    const iName = H.indexOf("PrivilegeName");
-    const iModule = H.indexOf("Module");
+    if (H[0] !== "NLine" || H[1] !== "PrivilegeName" || H[2] !== "Module")
+      return fail("Header must start with NLine, PrivilegeName, Module (in that order), followed by one or more role columns.");
+    const iNLine = 0, iName = 1, iModule = 2;
     const iPD = H.lastIndexOf("PrivilegeDescription");
 
-    if (iNLine < 0 || iName < 0 || iModule < 0 || iPD < 0)
-      return fail("Header must contain NLine, PrivilegeName, Module and PrivilegeDescription.");
-    if (!(iNLine < iName && iName < iModule && iModule < iPD))
-      return fail("Header columns out of order (expected NLine, PrivilegeName, Module, …roles…, PrivilegeDescription).");
-    if (iPD !== H.length - 1)
-      return fail("PrivilegeDescription must be the last column.");
-    if (iPD - iModule < 2)
-      return fail("No role columns found between Module and PrivilegeDescription.");
+    if (iPD >= 0 && iPD !== H.length - 1)
+      return fail("PrivilegeDescription, if present, must be the last column.");
+    const end = iPD >= 0 ? iPD : H.length;
+    if (end - iModule < 2)
+      return fail("No role columns found after Module.");
 
     const roleCols = [];
     const seen = new Set();
-    for (let c = iModule + 1; c < iPD; c++) {
+    for (let c = iModule + 1; c < end; c++) {
       const name = (H[c] || "").trim();
       if (!name) return fail(`Role column #${c + 1} has an empty header.`);
       if (seen.has(name)) return fail(`Duplicate role column: "${name}".`);
@@ -69,11 +67,11 @@
       roles: roleCols,
       rowCount: uploaded.rows.length,
       roleCount: roleCols.length,
-      cols: { iNLine, iName, iModule, iPD },
+      cols: { iNLine, iName, iModule },
     };
 
     function fail(msg) {
-      return { ok: false, errors: [msg], roles: [], rowCount: uploaded.rows.length, roleCount: 0 };
+      return { ok: false, errors: [tag + msg], roles: [], rowCount: uploaded.rows.length, roleCount: 0 };
     }
   }
 

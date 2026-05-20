@@ -30,7 +30,7 @@ checkbox's HTML element `id` **is** its `PrivilegeID`
 | File | Role | Columns |
 |---|---|---|
 | **`Privilege Config List.csv`** (embedded at build, the master) | source of truth for order + `PrivilegeID` | `NLine, PrivilegeID, ModuleName, PrivilegeName` |
-| **`Roles Config.csv`** (user input, multi-role) | the `Yes`/`---` matrix | `NLine, PrivilegeName, Module, <Role₁ … Roleₙ>, PrivilegeDescription` |
+| **`Roles Config.csv`** (user input, multi-role) | the `Yes`/`---` matrix | `NLine, PrivilegeName, Module, <Role₁ … Roleₙ>[, PrivilegeDescription]` |
 
 The input file has **no `PrivilegeID`**. The engine joins input rows to the
 embedded master **on `NLine`** to obtain the `PrivilegeID` it toggles.
@@ -67,14 +67,14 @@ the sample).
 | Decision | Choice | Why |
 |---|---|---|
 | Execution engine | **Pure MV3 extension**, content script in the user's live authenticated tab | No external auth, no SWG 403, no session-profile juggling; never types LAB creds. `playwright-cli` is a developer-only test/recon harness, not shipped. |
-| Input file | **Multi-role matrix**; user picks one role from a dropdown | Matches the real `Roles Config.csv`; columns located *by header* between `Module` and `PrivilegeDescription`. |
+| Input file | **Multi-role matrix**; user picks one role from a dropdown | Matches the real `Roles Config.csv`; role columns are every header after `Module` (and before the optional trailing `PrivilegeDescription`). |
 | PrivilegeID source | **Join input `NLine` → embedded `Privilege Config List.csv`** | Input file carries no `PrivilegeID`; the engine needs it for the checkbox `id`. |
-| Validation key | `NLine` + `PrivilegeName` (leading spaces) + `Module`↔`ModuleName`, **exact order** | Proves the join alignment and protects against an out-of-date file. `PrivilegeDescription` excluded (different snapshot, `NULL` on group rows). |
+| Validation key | `NLine` + `PrivilegeName` (leading spaces) + `Module`↔`ModuleName`, **exact order** | Proves the join alignment and protects against an out-of-date file. `PrivilegeDescription` is optional and not validated (different snapshot, `NULL` on group rows). |
 | Page precondition | **Hard-gate at file upload: must already be on Roles Setup; no auto-navigation** | User requirement; refusing early prevents acting on the wrong page and removes the direct-`goto` 403 risk entirely. |
 | Owner org | **Read `tr[aria-selected="true"]` in `oLeftPaneContent`**, confirm with user; existence also matches the grid Owner-Org cell | File has no org; grid bleeds roles across the org hierarchy so the cell match is required. Recon-confirmed. |
 | Create metadata | **No user form.** Name = picked role; Description = role name; Is-Admin = unchecked. **No Modules / Owner-Org handling** | Recon: the form has no `<select>`; Modules are Verint-derived, owner org rides the left-pane selection (hidden `selOrgID`). Nothing to set. |
 | Create vs. edit surface | **Same Role Setup Form**; Create just opens it empty via `#toolbar_ADD_ACTIONLabel` | Recon: Create is not a separate dialog — one engine, CREATE only prepends 3 field fills. |
-| Not-found branch | **Confirm, then create** | Symmetric with the overwrite confirm; nothing created without an explicit yes. |
+| Not-found branch | **Silent create** (no extra confirm) | The owner-org confirm already gated the action; a second "create it?" prompt was redundant happy-path noise. |
 | Overwrite | Edit in place + Save; never delete/recreate | Preserves user assignments and owner org. |
 | Overwrite semantics | **Strict mirror** — iterate every form checkbox: in `YesSet`→on else off, incl. non-CSV live extras | User decision: resulting role equals the CSV's Yes intent exactly; predictable, no orphan privileges. |
 | High-risk roles | **2nd risk-named confirm** if grid row Default Role==Yes or Is Admin==Yes before overwrite | Higher blast radius (primer); explicit extra gate. |
@@ -142,13 +142,15 @@ newlines), CRLF-agnostic, strips a leading UTF-8 BOM (Excel exports one — else
 the first header becomes `﻿NLine`), **never trims** (leading spaces are
 hierarchy data).
 
-**Column resolution:** find header indices for `NLine`, `PrivilegeName`,
-`Module`, `PrivilegeDescription`. Role columns = every column strictly between
-`Module` and `PrivilegeDescription`. Role headers must be non-empty and unique.
+**Column resolution:** require `NLine`, `PrivilegeName`, `Module` as the
+first three columns in that exact order. Role columns = every column after
+`Module`, up to the trailing `PrivilegeDescription` if it is present (else to
+end of header). Role headers must be non-empty and unique.
 
 **Structural — hard errors, block everything:**
-1. Header contains `NLine`, `PrivilegeName`, `Module` (in that order) then ≥1
-   role columns then `PrivilegeDescription` (last).
+1. Header starts with `NLine`, `PrivilegeName`, `Module` (in that order) and
+   has ≥1 role column after `Module`. `PrivilegeDescription` is **optional**;
+   if present it must be the **last** column.
 2. Same data-row count as the embedded master (766; `NLine` non-contiguous —
    445 absent — so the count is the master's row count, never `max(NLine)`).
 3. Per row, in order: input `NLine` == master `NLine`; input `PrivilegeName`
@@ -165,33 +167,54 @@ indentation-derived auto-promote was removed (it invented false cross-section
 parents — leading-space indentation encodes section grouping, not enable
 dependency).
 
-**Output:** structured report — errors and the per-role Yes count.
+**Output:** structured report — errors and the per-role Yes count. Error
+messages are prefixed with `[<file name>]` so a failed validation names the
+uploaded file. The happy path is **silent**: a passing file shows nothing
+and the popup proceeds directly to the role-column dropdown.
 
 ---
 
 ## 5. Workflow state machine
 
 ```
-upload
-  └─ page-precondition check (active tab == Roles Setup?)
-       ├─ NOT Roles Setup → STOP (message: "Open User Management → Security →
-       │                          Roles Setup, then retry." No navigation.)
-       └─ on Roles Setup → validate
+Import click
+  └─ page-precondition gate (cached recon)
+       ├─ NOT Roles Setup → STOP on mode step (message: "Open User
+       │                    Management → Security → Roles Setup, then retry.")
+       └─ on Roles Setup → auto-open file picker
+              ├─ picker cancelled → back to mode-select
+              └─ file chosen → validate
   ├─ errors → STOP (report)
-  └─ ok → role dropdown ──(cancel)──► STOP
-            │ pick role
+  └─ ok → role-column dropdown + target-name input ──(cancel)──► STOP
+            │ pick column (= sourceRoleName) + edit target (defaults to source)
             ▼
         resolve owner org from left-pane tree → confirm ──(cancel)──► STOP
             │
             ▼
-        grid existence check (itemname row AND Owner-Org cell == confirmed org)
+        grid existence check on TARGET name
+        (itemname row AND Owner-Org cell == confirmed org)
           ├─ exists      → "Overwrite? Yes/No"  ─No─► STOP
           │                  └Yes─► if row Default Role==Yes OR Is Admin==Yes:
           │                          2nd risk-named confirm ─No─► STOP
           │                                                  └Yes─► EDIT path
-          └─ not found   → "Create? Yes/No"      ─No─► STOP
-                                                  └Yes─► CREATE path → EDIT path
+          └─ not found   → CREATE path → EDIT path   (no extra confirm —
+                                                        owner-org confirm
+                                                        above already gated)
 ```
+
+**Source vs. target role name (Import).** The CSV column header
+(`sourceRoleName`) selects which `Yes`/`---` column to apply; the editable
+**Save as role name** input (`targetRoleName`, defaulting to the source) is
+what the extension creates/overwrites on Verint. They are decoupled so a CSV
+column can be cloned under a new name without editing the file. Wire format:
+the `APPLY` message carries both `sourceRoleName` and `targetRoleName`
+(`description` defaults to the target). `bridge.apply` uses the target for
+`gridRows`, `openEditor` / `openCreate` and the form's `roleName` field; the
+engine in `apply.js` is name-agnostic (operates on `yesIds`/`masterIds`).
+`GET_CONTEXT` is called with the target name (existence/overwrite is decided
+against the target). The persisted `vrbLastResult` carries both names so the
+post-rollback diagnostic names the right thing; status strings differentiate
+`source → target` only when they differ.
 
 **Page precondition (gate, on file upload — before any parsing/validation):**
 the moment a file is chosen, popup → background → `bridge.js` checks the active
@@ -397,8 +420,7 @@ popup open  →  silent recon  →  pageOk?
   ├─ Export click (off-page)        → "For extension to work, open it on the
   │                                    'Roles Setup' page." (stay on mode step)
   └─ Export click (on Roles Setup)  → LIST_ROLES
-       ├─ no org selected           → "Select an organization …" (stay on mode)
-       ├─ org has 0 roles           → "No roles under <org>" (stay on mode)
+       ├─ grid empty                → "No roles on this page." (stay on mode)
        └─ ok                        → exportStep:
                                         dropdown of roles ── Cancel ─► STOP
                                         │ Export click
@@ -417,7 +439,7 @@ popup open  →  silent recon  →  pageOk?
 
 | Decision | Choice | Why |
 |---|---|---|
-| Row set | **Master CSV order** (766/767 incl. group rows) | Matches `Role Export Sample.csv`; round-trippable through Import (`Roles Config.csv` shape only needs a `PrivilegeDescription` column added). |
+| Row set | **Master CSV order** (766/767 incl. group rows) | Matches `Role Export Sample.csv`; the importer accepts this no-`PrivilegeDescription` shape directly (round-trip just works). |
 | Live extras (~20) | **Omitted** | Sample has exactly the master row set. Live extras are Verint-managed (license/module bundles) and have no master row to map to. |
 | Read mechanism | **Open editor → `E.readEnabled(doc)` → cancel** | Re-uses the proven Import open/cancel path. The grid summary doesn't carry per-privilege state. |
 | Cancel path | Same `cancelForm(R) + gridBack()` as the idempotent-edit branch | View-mode read does not toggle any checkbox → form is not dirty → Cancel is prompt-free (no native unsaved-changes guard). |
@@ -433,11 +455,11 @@ popup open  →  silent recon  →  pageOk?
 
 - `LIST_ROLES` → `bridge.listRoles()`:
   - precondition: `isRolesSetup()` else `{error:"not_on_roles_setup"}`.
-  - org: `selectedOrg()` else `{error:"no_org_selected"}`.
-  - roles: enumerate `rightDoc().querySelectorAll("tr[itemname]")`,
-    keep rows whose `td[3]` (OwnerOrg cell) equals the selected org,
-    project to `itemname` attr, dedupe, sort alpha.
-  - returns `{ ownerOrg, roles: string[] }`.
+  - roles: enumerate every `tr[itemname]` in `rightDoc()` (right-pane grid,
+    unfiltered — no OwnerOrg comparison), project to the `itemname` attr,
+    dedupe, sort alpha. Empty grid → `roles: []` and the popup renders the
+    empty-state.
+  - returns `{ roles: string[] }`.
 - `EXPORT_READ { roleName }` → `bridge.exportRead`:
   - precondition: `isRolesSetup()` + role still present in the grid.
   - `R = openEditor(roleName)` (same call as Import).
@@ -472,8 +494,8 @@ Add `"downloads"` to `permissions`. Host pattern unchanged
 
 - Does not Save to Verint (no `saveCommit`, no progress phase).
 - Does not include `PrivilegeDescription` (the sample doesn't either; the
-  Import schema requires it but a re-import would mean wrapping the export
-  back into the multi-role config flow, which is out of scope here).
+  Import schema treats that column as optional, so a re-import of an export
+  works as-is).
 - Does not include live extras (~20 checkboxes outside the master).
 - Does not capture role metadata (Is-Admin, Description, Owner Org, Modules)
   — out of scope for this iteration; can be added if a future round-trip

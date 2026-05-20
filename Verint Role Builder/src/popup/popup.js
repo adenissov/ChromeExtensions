@@ -192,7 +192,7 @@
     // parse + validate
     const text = await f.text();
     const uploaded = VRB.parseCSV(text);
-    const v = VRB.validateStructure(uploaded, state.master);
+    const v = VRB.validateStructure(uploaded, state.master, f.name);
     state.uploaded = uploaded;
     state.v = v;
 
@@ -206,13 +206,6 @@
       );
       return;
     }
-    report(
-      '<b class="ok">Structure OK.</b>\nRows: ' +
-        v.rowCount +
-        " · Roles: " +
-        v.roleCount,
-      "ok"
-    );
 
     const sel = $("role");
     sel.innerHTML = "";
@@ -222,15 +215,38 @@
       o.textContent = r.name;
       sel.appendChild(o);
     });
+    // target-name input: defaults to the selected source name; follows the
+    // dropdown while the user hasn't edited it themselves (dirty flag).
+    state.targetDirty = false;
+    $("targetName").value = v.roles[0] ? v.roles[0].name : "";
+    show("targetNameErr", false);
     show("pickStep", true);
   }
 
-  async function onContinue() {
-    show("pickStep", false);
-    const colIdx = parseInt($("role").value, 10);
-    const roleName = $("role").selectedOptions[0].textContent;
+  function onRoleChange() {
+    if (!state.targetDirty) {
+      const opt = $("role").selectedOptions[0];
+      $("targetName").value = opt ? opt.textContent : "";
+    }
+  }
+  function onTargetInput() {
+    state.targetDirty = true;
+    show("targetNameErr", false);
+  }
 
-    const ctx = await sendTab({ type: VRB.MSG.GET_CONTEXT, roleName });
+  async function onContinue() {
+    const colIdx = parseInt($("role").value, 10);
+    const sourceRoleName = $("role").selectedOptions[0].textContent;
+    const targetRoleName = $("targetName").value.trim();
+    if (!targetRoleName) {
+      const e = $("targetNameErr");
+      e.textContent = "Enter a target role name.";
+      show("targetNameErr", true);
+      return;
+    }
+    show("pickStep", false);
+
+    const ctx = await sendTab({ type: VRB.MSG.GET_CONTEXT, roleName: targetRoleName });
     if (ctx.error === "no_org_selected") {
       status('<span class="err">Select an organization in the Roles Setup left pane first.</span>', "err");
       return;
@@ -245,7 +261,7 @@
 
     let mode;
     if (ctx.exists) {
-      if (!(await ask(`Overwrite role "${roleName}" under "${ctx.ownerOrg}"?`)))
+      if (!(await ask(`Overwrite role "${targetRoleName}" under "${ctx.ownerOrg}"?`)))
         return reset();
       if (ctx.isDefault || ctx.isAdmin) {
         const kind = [ctx.isDefault && "Default", ctx.isAdmin && "Admin"]
@@ -253,19 +269,13 @@
           .join(" & ");
         if (
           !(await ask(
-            `⚠ "${roleName}" is a ${kind} role (high blast radius — affects every assigned user). Overwrite anyway?`
+            `⚠ "${targetRoleName}" is a ${kind} role (high blast radius — affects every assigned user). Overwrite anyway?`
           ))
         )
           return reset();
       }
       mode = "edit";
     } else {
-      if (
-        !(await ask(
-          `Role "${roleName}" not found under "${ctx.ownerOrg}" — create it?`
-        ))
-      )
-        return reset();
       mode = "create";
     }
 
@@ -275,8 +285,15 @@
     const masterIds = state.master.rows
       .filter((r) => !r.isGroup)
       .map((r) => r.privId);
+    const sameName = sourceRoleName === targetRoleName;
     status(
-      esc("Mode: " + mode + "\nEnable (Yes): " + plan.yesCount + "\nApplying strict mirror…")
+      esc(
+        "Mode: " + mode +
+        "\nEnable (Yes): " + plan.yesCount +
+        (sameName
+          ? "\nApplying strict mirror…"
+          : `\nApplying "${sourceRoleName}" → "${targetRoleName}"…`)
+      )
     );
 
     const lock = await bg({ bg: "acquire" });
@@ -288,8 +305,9 @@
       const res = await sendTab({
         type: VRB.MSG.APPLY,
         mode,
-        roleName,
-        description: roleName,
+        sourceRoleName,
+        targetRoleName,
+        description: targetRoleName,
         yesIds: plan.yesIds,
         masterIds,
       });
@@ -385,16 +403,21 @@
       const stamp = vrbLastResultAt
         ? new Date(vrbLastResultAt).toLocaleTimeString()
         : "?";
-      const role = vrbLastResult.roleName || "?";
+      const src = vrbLastResult.sourceRoleName;
+      const tgt = vrbLastResult.targetRoleName || vrbLastResult.roleName || "?";
       const mode = vrbLastResult.mode || "?";
+      const label =
+        src && src !== tgt
+          ? `"${src}" → "${tgt}"`
+          : `"${tgt}"`;
       report(
         '<i>Last run · ' +
           esc(stamp) +
           ' · ' +
           esc(mode) +
-          ' "' +
-          esc(role) +
-          '"</i>',
+          ' ' +
+          esc(label) +
+          '</i>',
         ""
       );
       renderResult(vrbLastResult);
@@ -412,14 +435,6 @@
     show("status", false);
     status("<i>Loading roles…</i>");
     const res = await sendTab({ type: VRB.MSG.LIST_ROLES });
-    if (res.error === "no_org_selected") {
-      show("status", false);
-      report(
-        '<span class="err">Select an organization in the Roles Setup left pane first.</span>',
-        "err"
-      );
-      return;
-    }
     if (res.error) {
       show("status", false);
       report('<span class="err">Error: ' + esc(res.error) + "</span>", "err");
@@ -427,10 +442,7 @@
     }
     if (!res.roles || !res.roles.length) {
       show("status", false);
-      report(
-        '<span class="warn">No roles under "' + esc(res.ownerOrg) + '".</span>',
-        "warn"
-      );
+      report('<span class="warn">No roles on this page.</span>', "warn");
       return;
     }
     show("status", false);
@@ -442,7 +454,6 @@
       o.textContent = name;
       sel.appendChild(o);
     });
-    state.exportOrg = res.ownerOrg;
     show("modeStep", false);
     show("exportStep", true);
   }
@@ -515,6 +526,14 @@
     show("report", false);
     show("modeStep", false);
     show("uploadStep", true);
+    $("file").click();
+  }
+
+  // Native file-picker dismissal (Chrome dispatches `cancel` when the user
+  // closes the dialog without picking). Return to the mode-select screen so
+  // the user can choose Export or Import again without reopening the popup.
+  function onFileCancel() {
+    if (!$("file").files.length) backToMode();
   }
 
   $("exportBtn").addEventListener("click", onExportClick);
@@ -523,6 +542,9 @@
   $("exportCancelBtn").addEventListener("click", onExportCancel);
   $("file").addEventListener("click", onUploadClick);
   $("file").addEventListener("change", onFile);
+  $("file").addEventListener("cancel", onFileCancel);
+  $("role").addEventListener("change", onRoleChange);
+  $("targetName").addEventListener("input", onTargetInput);
   $("continueBtn").addEventListener("click", onContinue);
   $("cancelBtn").addEventListener("click", reset);
   loadMaster();

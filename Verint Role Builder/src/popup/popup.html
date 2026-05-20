@@ -15,10 +15,8 @@
     </section>
 
     <section id="uploadStep" class="hidden">
-      <label class="filebtn">
-        Upload role config CSV
-        <input type="file" id="file" accept=".csv,text/csv" hidden />
-      </label>
+      <p id="uploadHint">Pick the role config CSV in the file dialog.</p>
+      <input type="file" id="file" accept=".csv,text/csv" hidden />
     </section>
 
     <section id="exportStep" class="hidden">
@@ -33,8 +31,11 @@
     <section id="report" class="hidden"></section>
 
     <section id="pickStep" class="hidden">
-      <label for="role">Role to create / overwrite</label>
+      <label for="role">Role column in CSV</label>
       <select id="role"></select>
+      <label for="targetName" class="opt">Save as role name</label>
+      <input type="text" id="targetName" />
+      <div id="targetNameErr" class="err hidden"></div>
       <div class="row">
         <button id="continueBtn">Continue</button>
         <button id="cancelBtn" class="ghost">Cancel</button>
