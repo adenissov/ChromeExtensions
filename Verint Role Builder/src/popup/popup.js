@@ -470,10 +470,9 @@
     const enabledSet = new Set(res.enabledIds || []);
     const csv = VRB.buildExportCsv(state.master, roleName, enabledSet);
     const filename = VRB.exportFilename(roleName);
-    // Use a data URL rather than `URL.createObjectURL(blob)` so the download
-    // remains valid even if the Save-As dialog closes the popup before the
-    // user picks a destination — blob URLs are scoped to the popup page that
-    // created them and would 404 once that page is torn down. CSV is small
+    // Use a base64 data URL (not a blob URL) so the download is independent
+    // of the popup's life cycle. The Save-As dialog steals focus and tears
+    // the popup down; a blob URL would 404 once that happens. CSV is small
     // (~30 KB); base64 overhead is irrelevant. UTF-8 preserved via
     // FileReader.readAsDataURL.
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -483,21 +482,22 @@
       fr.onerror = () => reject(fr.error || new Error("FileReader failed"));
       fr.readAsDataURL(blob);
     });
-    try {
-      await chrome.downloads.download({
-        url: dataUrl,
-        filename,
-        saveAs: true,
-      });
+    // Trigger the download from the background SW — calling
+    // chrome.downloads.download with saveAs:true from the popup honored the
+    // hint on the first run only (popup teardown on focus-loss dropped the
+    // option on subsequent runs, so the file went silently to Downloads).
+    // The SW outlives the popup, so saveAs:true is honored every time.
+    const out = await bg({ bg: "download", dataUrl, filename });
+    if (out && out.ok) {
       status(
         '<span class="ok">✅ Export ready — choose a destination in the browser dialog.</span>\n' +
           esc(filename),
         "ok"
       );
-    } catch (e) {
+    } else {
       status(
         '<span class="err">Download failed: ' +
-          esc(String((e && e.message) || e)) +
+          esc((out && out.error) || "unknown") +
           "</span>",
         "err"
       );

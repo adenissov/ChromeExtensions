@@ -1,12 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "Verint Role Builder",
+  "name": "Verint Role Export/Import",
   "version": "0.1.0",
   "description": "Create or overwrite a Verint role from a multi-role config CSV, on the Roles Setup page.",
   "permissions": ["activeTab", "tabs", "storage", "scripting", "downloads"],
   "host_permissions": ["https://*/wfo/*"],
   "background": { "service_worker": "src/background.js" },
-  "action": { "default_popup": "src/popup/popup.html", "default_title": "Verint Role Builder" },
+  "icons": {
+    "16": "icons/Verint_icon_16.png",
+    "32": "icons/Verint_icon_32.png",
+    "48": "icons/Verint_icon_48.png"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Verint Role Export/Import",
+    "default_icon": {
+      "16": "icons/Verint_icon_16.png",
+      "32": "icons/Verint_icon_32.png",
+      "48": "icons/Verint_icon_48.png"
+    }
+  },
   "content_scripts": [
     {
       "matches": ["https://*/wfo/*"],
