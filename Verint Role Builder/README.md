@@ -166,6 +166,10 @@ Cell rules:
 Re-running the same file/role is safe and idempotent: the second run reports
 that the role already matched.
 
+> Every prompt and message in the popup (validation errors, confirmations,
+> outcome lines, the export destination prompt) is shown in the same font as
+> the extension header, in **bold**.
+
 > The start screen no longer carries over the previous run's result panel —
 > reopening the popup always shows a clean Export/Import choice.
 
@@ -184,14 +188,21 @@ shaped like `Role Export Sample.csv`.
    page. Pick one.
 4. Click **Export** in the dialog. The extension opens the role's editor,
    reads every privilege checkbox, then cancels the editor (no change is
-   saved — export is read-only).
+   saved — export is read-only). No progress message is shown during this
+   step. The popup then shows a single green line, **Choose the destination
+   location** (in the dialog header's font), and the browser's Save As dialog
+   opens.
 5. The browser's standard **Save As** dialog opens with the proposed file
    name:
    ```
    Verint Role Export_<role-name>_YYYY-MM-DD.csv
    ```
    Pick any folder and confirm. Characters that are not legal in a Windows
-   filename (`/ \ : * ? " < > |`) are replaced with `_`.
+   filename (`/ \ : * ? " < > |`) are replaced with `_`. The folder you save
+   into is **remembered**, so the next export's Save As dialog reopens there
+   instead of resetting to Downloads. (Chrome only permits this for folders
+   under your Downloads directory; if you save elsewhere the next dialog
+   falls back to Downloads.)
 
 ### Output schema
 

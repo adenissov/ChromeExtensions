@@ -449,7 +449,10 @@ popup open  →  silent recon  →  pageOk?
 | Group rows | Module column blank; role column blank | Mirrors the sample. |
 | Filename | `Verint Role Export_<role>_YYYY-MM-DD.csv` | Per spec. Date is local-time `toISOString().slice(0,10)`. |
 | Filename sanitization | Replace `/\:*?"<>|` and control chars in role name with `_` | Windows-invalid characters; everything else (incl. spaces) passes through. |
-| Download mechanism | `chrome.downloads.download({ url: blob-URL, filename, saveAs: true })` from the popup | `saveAs:true` triggers the native folder picker; popup is alive for the duration of the click so the blob URL stays addressable. Object URL revoked on the matching `downloads.onChanged → state=complete\|interrupted`. |
+| Download mechanism | `chrome.downloads.download({ url: data-URL, filename, saveAs: true })` from the **background SW** | `saveAs:true` triggers the native folder picker; the SW outlives the popup (which the Save-As dialog tears down), so the hint is honored every run. |
+| Save-As prompt | Frameless green line **"Choose the destination location"** in the dialog header's font/size (`#exportPrompt`), shown when the download is kicked off | Per spec — replaced the framed `#status` "Export ready…" panel. The framed `#status` is kept only for the export *error* path. |
+| Export progress message | **None.** No "Opening editor…" status between Export-click and the Save-As prompt (2026-05-20) | Per spec; the editor open/read/cancel is fast and the only message the user needs is the destination prompt. |
+| Persist save folder | SW records the completed download's directory (`downloads.onChanged → filename.current`, `dirOf`) in `chrome.storage.local.vrbExportDir`; next export requests `<dir>/<basename>` so the dialog reopens there | Chrome's Save-As always defaults to Downloads — it does not remember the last folder. Chrome rejects absolute / `..` paths in `downloads.download`, so the request is **guarded**: a runtime error retries once with the bare basename (degrade to Downloads, never fail the export). Effective reuse therefore covers folders Chrome accepts as a relative path (under Downloads); other folders fall back. |
 | CSV quoting | RFC4180: quote only fields containing `,`, `"`, `\n`, or `\r`; double internal quotes | Sample uses bare unquoted leading spaces — quoting only when required keeps round-trip simple. |
 | Concurrency | **No background lock** — Export does not Save and does not contend with Import's apply lock | Import's `applyInFlight` guard is preserved as-is. If an Import is mid-run, Export reads can still proceed (different message path). |
 
@@ -514,7 +517,7 @@ Add `"downloads"` to `permissions`. Host pattern unchanged
 - **Unified import outcome surface.** Every import outcome — create success,
   overwrite success, idempotent no-op, and any failure/rollback — renders
   through the single frameless `#outcomeStep`: a `#outcomeMsg` line in the
-  dialog's own font (`font: inherit`, **bold**, no border) above a blue **OK**
+  shared header font (no border) above a blue **OK**
   button. `#outcomeMsg.ok` is green, `#outcomeMsg.err` is red. The line is the
   **top-line outcome only** — no stats (changed-checkbox count, live-extras,
   skipped-absent, mismatch list are not shown). `showOutcome(html, ok)` is the
@@ -530,8 +533,21 @@ Add `"downloads"` to `permissions`. Host pattern unchanged
   in the popup. `vrbLastResult` is still persisted by `bridge.js` before any
   blocking Cancel; inspect `chrome.storage.local` for the named diagnostics
   after a rollback.
+- **No post-Continue stats panel.** After Continue (and the owner-org /
+  overwrite confirms), the apply runs straight to the outcome line — the
+  earlier framed `#status` panel that listed *"Mode: … / Enable (Yes): N /
+  Applying…"* is gone. `#status` now only carries export/error text, never an
+  import progress stat.
 - **Import dialog centering.** The owner-org / overwrite confirm (`#confirm`,
   carrying messages like *"Owner organization is …"*) is center-aligned, as is
   `#outcomeStep`.
 - **Import pick-step labels.** The role dropdown is labelled *Role name in role
   config \*.CSV* and the target input *Name of the role to create*.
+- **Unified prompt/message font (2026-05-20).** Every prompt and message
+  surface — `#report`, `#status`, `#confirmMsg`, `#outcomeMsg`, `#exportPrompt`,
+  `#targetNameErr` — shares the `h1` header font (`"Segoe UI", system-ui,
+  sans-serif` at 15px) and is **bold**. One CSS rule sets the trio; the
+  prior monospace 12px on `#report`/`#status`, `font: inherit` on
+  `#outcomeMsg`, and the 12px on `#targetNameErr` were removed so nothing
+  overrides it. Colour classes (`.err`/`.ok`/`.warn`) and the framed border on
+  `#report`/`#status` are unchanged.

@@ -7,6 +7,13 @@ body {
   color: #1f2328;
 }
 h1 { font-size: 15px; margin: 0 0 12px; text-align: center; }
+/* All prompts/messages share the h1 header font: Segoe UI 15px, bold. */
+#report, #status, #confirmMsg, #outcomeMsg, #exportPrompt, #targetNameErr {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: bold;
+}
+#exportPrompt { color: #1a7f37; text-align: center; }
 section { margin-bottom: 12px; }
 .hidden { display: none; }
 .row { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }
@@ -36,7 +43,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .opt { display: block; margin-top: 10px; color: #444; }
 select { width: 100%; padding: 6px; margin-top: 4px; }
 input[type="text"] { width: 100%; padding: 6px; margin-top: 4px; font: inherit; }
-#targetNameErr { margin-top: 6px; font-size: 12px; text-align: center; }
+#targetNameErr { margin-top: 6px; text-align: center; }
 #report, #status {
   border: 1px solid #d0d7de;
   border-radius: 6px;
@@ -44,8 +51,6 @@ input[type="text"] { width: 100%; padding: 6px; margin-top: 4px; font: inherit; 
   max-height: 260px;
   overflow: auto;
   white-space: pre-wrap;
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 12px;
   text-align: center;
 }
 .err { color: #b42318; }
@@ -53,6 +58,6 @@ input[type="text"] { width: 100%; padding: 6px; margin-top: 4px; font: inherit; 
 .warn { color: #9a6700; }
 #confirm { text-align: center; }
 #outcomeStep { text-align: center; }
-#outcomeMsg { font: inherit; font-weight: bold; margin: 0 0 12px; }
+#outcomeMsg { margin: 0 0 12px; }
 #outcomeMsg.ok { color: #1a7f37; }
 #outcomeMsg.err { color: #b42318; }

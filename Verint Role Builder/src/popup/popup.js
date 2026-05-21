@@ -81,8 +81,8 @@
   }
 
   function reset() {
-    ["report", "pickStep", "confirm", "status", "exportStep", "outcomeStep"].forEach((i) =>
-      show(i, false)
+    ["report", "pickStep", "confirm", "status", "exportStep", "exportPrompt", "outcomeStep"].forEach(
+      (i) => show(i, false)
     );
     $("file").value = "";
   }
@@ -104,7 +104,7 @@
   // step. Used by exportCancel, the outcome OK button, and after a successful
   // export.
   function backToMode() {
-    ["uploadStep", "exportStep", "report", "status", "outcomeStep"].forEach((i) =>
+    ["uploadStep", "exportStep", "report", "status", "exportPrompt", "outcomeStep"].forEach((i) =>
       show(i, false)
     );
     show("modeStep", true);
@@ -299,16 +299,6 @@
     const masterIds = state.master.rows
       .filter((r) => !r.isGroup)
       .map((r) => r.privId);
-    const sameName = sourceRoleName === targetRoleName;
-    status(
-      esc(
-        "Mode: " + mode +
-        "\nEnable (Yes): " + plan.yesCount +
-        (sameName
-          ? "\nApplying strict mirror…"
-          : `\nApplying "${sourceRoleName}" → "${targetRoleName}"…`)
-      )
-    );
 
     const lock = await bg({ bg: "acquire" });
     if (!lock.ok) {
@@ -389,7 +379,6 @@
     if (!roleName) return;
     show("exportStep", false);
     show("report", false);
-    status('<i>Opening editor for "' + esc(roleName) + '"…</i>');
 
     const res = await sendTab({
       type: VRB.MSG.EXPORT_READ,
@@ -426,11 +415,8 @@
     // The SW outlives the popup, so saveAs:true is honored every time.
     const out = await bg({ bg: "download", dataUrl, filename });
     if (out && out.ok) {
-      status(
-        '<span class="ok">✅ Export ready — choose a destination in the browser dialog.</span>\n' +
-          esc(filename),
-        "ok"
-      );
+      show("status", false);
+      show("exportPrompt", true);
     } else {
       status(
         '<span class="err">Download failed: ' +
