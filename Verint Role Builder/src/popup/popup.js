@@ -81,16 +81,25 @@
   }
 
   function reset() {
-    ["report", "pickStep", "confirm", "status", "exportStep"].forEach((i) =>
+    ["report", "pickStep", "confirm", "status", "exportStep", "successStep"].forEach((i) =>
       show(i, false)
     );
     $("file").value = "";
   }
 
+  // Frameless green success line + blue OK that redraws the start dialog.
+  function showSuccess(roleName) {
+    ["report", "pickStep", "confirm", "status", "exportStep"].forEach((i) =>
+      show(i, false)
+    );
+    $("successMsg").innerHTML = 'Role "' + esc(roleName) + '" created successfully';
+    show("successStep", true);
+  }
+
   // Back to the mode-select screen from either the upload step or the export
   // step. Used by exportCancel and after a successful export.
   function backToMode() {
-    ["uploadStep", "exportStep", "report", "status"].forEach((i) =>
+    ["uploadStep", "exportStep", "report", "status", "successStep"].forEach((i) =>
       show(i, false)
     );
     show("modeStep", true);
@@ -311,7 +320,9 @@
         yesIds: plan.yesIds,
         masterIds,
       });
-      renderResult(res);
+      const created = mode === "create" && !res.error && res.ok !== false;
+      if (created) showSuccess(targetRoleName);
+      else renderResult(res);
     } finally {
       await bg({ bg: "release" });
     }
@@ -387,41 +398,6 @@
       );
     const clean = !(res.skippedAbsent && res.skippedAbsent.length);
     status(esc(lines.join("\n")), clean ? "ok" : "warn");
-  }
-
-  // Re-render the most recent run's outcome on popup open — the popup is
-  // closed by Verint's native "discard changes?" confirm during rollback, so
-  // we persist the result to chrome.storage.local before that point and
-  // restore it here.
-  async function showLastResult() {
-    try {
-      const { vrbLastResult, vrbLastResultAt } = await chrome.storage.local.get([
-        "vrbLastResult",
-        "vrbLastResultAt",
-      ]);
-      if (!vrbLastResult) return;
-      const stamp = vrbLastResultAt
-        ? new Date(vrbLastResultAt).toLocaleTimeString()
-        : "?";
-      const src = vrbLastResult.sourceRoleName;
-      const tgt = vrbLastResult.targetRoleName || vrbLastResult.roleName || "?";
-      const mode = vrbLastResult.mode || "?";
-      const label =
-        src && src !== tgt
-          ? `"${src}" → "${tgt}"`
-          : `"${tgt}"`;
-      report(
-        '<i>Last run · ' +
-          esc(stamp) +
-          ' · ' +
-          esc(mode) +
-          ' ' +
-          esc(label) +
-          '</i>',
-        ""
-      );
-      renderResult(vrbLastResult);
-    } catch (_) {}
   }
 
   // Export/Import mode buttons — both gate on the cached page recon. If not
@@ -547,7 +523,7 @@
   $("targetName").addEventListener("input", onTargetInput);
   $("continueBtn").addEventListener("click", onContinue);
   $("cancelBtn").addEventListener("click", reset);
+  $("successOkBtn").addEventListener("click", backToMode);
   loadMaster();
   reconPageSilent();
-  showLastResult();
 })();

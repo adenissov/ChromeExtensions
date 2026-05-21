@@ -157,10 +157,16 @@ Cell rules:
    including any CSV `Yes` privilege whose checkbox doesn't exist in this
    environment (reported as skipped). Verification re-reads every checkbox; a
    failure lists the off-target privileges and does **not** leave a half-saved
-   role (save is the single commit point).
+   role (save is the single commit point). When a **new** role is created
+   successfully, the popup instead shows a green **Role "X" created
+   successfully** confirmation with an **OK** button that returns you to the
+   Export/Import start screen.
 
 Re-running the same file/role is safe and idempotent: the second run reports
 "0 changes".
+
+> The start screen no longer carries over the previous run's result panel —
+> reopening the popup always shows a clean Export/Import choice.
 
 ---
 

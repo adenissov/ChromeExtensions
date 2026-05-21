@@ -274,7 +274,9 @@ navigation**. The extension never auto-navigates; the user must be on the page.
    Save. The result is **persisted to `chrome.storage.local`
    (`vrbLastResult`) BEFORE Cancel** — Verint's native "changes will not be
    saved" `confirm()` fires on Cancel-of-dirty-form and closes the MV3
-   popup, so the popup re-renders the diagnostic from storage on next open.
+   popup. (As of 2026-05-20 the popup no longer re-renders this persisted
+   result on open — the start screen is kept clean; see §10. `vrbLastResult`
+   is still written to `chrome.storage.local` for forensic inspection.)
    - **Exact (no mismatches)** → `saveCommit()` → on `gridBack()` return
      `ok:true, verify:"verified-exact"`.
    - **Any real discrepancy** → **do NOT Save**. Roll back via the form's own
@@ -500,3 +502,22 @@ Add `"downloads"` to `permissions`. Host pattern unchanged
 - Does not capture role metadata (Is-Admin, Description, Owner Org, Modules)
   — out of scope for this iteration; can be added if a future round-trip
   requirement comes up.
+
+---
+
+## 10. Popup result UX (2026-05-20)
+
+- **No carry-over panel on open.** The popup no longer re-renders the last
+  persisted run result when it opens (`showLastResult` removed). The start
+  screen always shows just the Export/Import choice — the `#report`/`#status`
+  panels are populated only by the live flow, never on launch.
+- **Create success.** On a successful **create** (`mode === "create"`,
+  `ok !== false`) the popup shows a dedicated frameless `#successStep`:
+  a green, header-sized line **Role "<name>" created successfully**
+  (`.success`, no border) above a blue **OK** button. OK calls `backToMode()`,
+  redrawing the initial start dialog.
+- **Edit / failure unchanged.** Overwrite success, idempotent no-op, and any
+  failure/rollback still render through `renderResult` into the framed
+  `#status` panel (with the named diagnostics). `vrbLastResult` is still
+  persisted by `bridge.js` before any blocking Cancel for forensic inspection,
+  but is no longer surfaced in the popup automatically.
