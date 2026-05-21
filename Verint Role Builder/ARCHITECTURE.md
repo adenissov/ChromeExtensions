@@ -511,13 +511,27 @@ Add `"downloads"` to `permissions`. Host pattern unchanged
   persisted run result when it opens (`showLastResult` removed). The start
   screen always shows just the Export/Import choice — the `#report`/`#status`
   panels are populated only by the live flow, never on launch.
-- **Create success.** On a successful **create** (`mode === "create"`,
-  `ok !== false`) the popup shows a dedicated frameless `#successStep`:
-  a green, header-sized line **Role "<name>" created successfully**
-  (`.success`, no border) above a blue **OK** button. OK calls `backToMode()`,
-  redrawing the initial start dialog.
-- **Edit / failure unchanged.** Overwrite success, idempotent no-op, and any
-  failure/rollback still render through `renderResult` into the framed
-  `#status` panel (with the named diagnostics). `vrbLastResult` is still
-  persisted by `bridge.js` before any blocking Cancel for forensic inspection,
-  but is no longer surfaced in the popup automatically.
+- **Unified import outcome surface.** Every import outcome — create success,
+  overwrite success, idempotent no-op, and any failure/rollback — renders
+  through the single frameless `#outcomeStep`: a `#outcomeMsg` line in the
+  dialog's own font (`font: inherit`, **bold**, no border) above a blue **OK**
+  button. `#outcomeMsg.ok` is green, `#outcomeMsg.err` is red. The line is the
+  **top-line outcome only** — no stats (changed-checkbox count, live-extras,
+  skipped-absent, mismatch list are not shown). `showOutcome(html, ok)` is the
+  one entry point; `renderResult` maps a result to a single top line (create →
+  *Role "X" created successfully*; verified → *Role saved and verified exact.*;
+  already-exact → *Role already matched the CSV exactly — nothing to save.*;
+  failure → the `REASONS`/`reason`/`error` head). OK calls `backToMode()`,
+  redrawing the start dialog. (Replaces the earlier split between a green
+  create-only `#successStep` and a framed `#status` panel that listed full
+  diagnostics. `privLabel` was dropped with the stats block.)
+- **Diagnostics moved to forensic-only.** The detailed breakdown (off-target
+  privileges by `Name (id)`, skipped counts, rollback note) is no longer shown
+  in the popup. `vrbLastResult` is still persisted by `bridge.js` before any
+  blocking Cancel; inspect `chrome.storage.local` for the named diagnostics
+  after a rollback.
+- **Import dialog centering.** The owner-org / overwrite confirm (`#confirm`,
+  carrying messages like *"Owner organization is …"*) is center-aligned, as is
+  `#outcomeStep`.
+- **Import pick-step labels.** The role dropdown is labelled *Role name in role
+  config \*.CSV* and the target input *Name of the role to create*.

@@ -81,25 +81,30 @@
   }
 
   function reset() {
-    ["report", "pickStep", "confirm", "status", "exportStep", "successStep"].forEach((i) =>
+    ["report", "pickStep", "confirm", "status", "exportStep", "outcomeStep"].forEach((i) =>
       show(i, false)
     );
     $("file").value = "";
   }
 
-  // Frameless green success line + blue OK that redraws the start dialog.
-  function showSuccess(roleName) {
+  // Frameless bold outcome line (green=ok / red=fail) in the dialog font + a
+  // blue OK that redraws the start dialog. The single surface for every import
+  // outcome — create, overwrite, idempotent no-op, and failure/rollback.
+  function showOutcome(html, ok) {
     ["report", "pickStep", "confirm", "status", "exportStep"].forEach((i) =>
       show(i, false)
     );
-    $("successMsg").innerHTML = 'Role "' + esc(roleName) + '" created successfully';
-    show("successStep", true);
+    const m = $("outcomeMsg");
+    m.className = ok ? "ok" : "err";
+    m.innerHTML = html;
+    show("outcomeStep", true);
   }
 
   // Back to the mode-select screen from either the upload step or the export
-  // step. Used by exportCancel and after a successful export.
+  // step. Used by exportCancel, the outcome OK button, and after a successful
+  // export.
   function backToMode() {
-    ["uploadStep", "exportStep", "report", "status", "successStep"].forEach((i) =>
+    ["uploadStep", "exportStep", "report", "status", "outcomeStep"].forEach((i) =>
       show(i, false)
     );
     show("modeStep", true);
@@ -321,83 +326,28 @@
         masterIds,
       });
       const created = mode === "create" && !res.error && res.ok !== false;
-      if (created) showSuccess(targetRoleName);
+      if (created)
+        showOutcome('Role "' + esc(targetRoleName) + '" created successfully', true);
       else renderResult(res);
     } finally {
       await bg({ bg: "release" });
     }
   }
 
-  // element id ("-10399") -> "View Risk Management (-10399)" via embedded master
-  function privLabel(id) {
-    const m =
-      state.master &&
-      state.master.rows.find((r) => r.privId === parseInt(id, 10));
-    return m ? `${m.name.trim()} (${id})` : String(id);
-  }
-
+  // Single top-line outcome — no frame, no stats. Green on success, red on
+  // failure; the blue OK button returns to the start dialog.
   function renderResult(res) {
     if (res.error || res.ok === false) {
       const head =
         REASONS[res.reason] || res.reason || res.error || "unknown error";
-      const extra = [];
-      if (res.rolledBack)
-        extra.push(
-          "Rolled back cleanly — Verint state untouched. (Verint shows a native " +
-            "“changes will not be saved” prompt during rollback — that's expected; " +
-            "click OK to dismiss. The popup closes when the prompt appears; reopen " +
-            "it to see this diagnostic.)"
-        );
-      if (res.mismatches && res.mismatches.length)
-        extra.push(
-          "Privileges still off-target (" +
-            res.mismatches.length +
-            "):\n  " +
-            res.mismatches
-              .map((m) => `${privLabel(m.id)} → wanted ${m.want ? "ON" : "OFF"}`)
-              .join("\n  ")
-        );
-      if (res.skippedAbsent && res.skippedAbsent.length)
-        extra.push(
-          "CSV Yes with no checkbox in this env: " + res.skippedAbsent.length
-        );
-      if (res.skippedNonMaster && res.skippedNonMaster.length)
-        extra.push(
-          "Live extras outside the master CSV (left to Verint): " +
-            res.skippedNonMaster.length
-        );
-      status(
-        '<b class="err">❌ Failed.</b> ' +
-          esc(head) +
-          (extra.length ? "\n" + esc(extra.join("\n")) : ""),
-        "err"
-      );
+      showOutcome(esc(head), false);
       return;
     }
-    const lines = [];
-    lines.push(
+    const top =
       res.verify === "already-exact"
         ? "Role already matched the CSV exactly — nothing to save."
-        : "✅ Role saved and verified exact."
-    );
-    lines.push("Changed checkboxes: " + (res.changed || 0));
-    if (res.skippedAbsent && res.skippedAbsent.length)
-      lines.push(
-        "CSV Yes with no checkbox in this env (informational): " +
-          res.skippedAbsent.length
-      );
-    if (res.skippedNonMaster && res.skippedNonMaster.length)
-      lines.push(
-        "Live extras outside the master CSV (left to Verint): " +
-          res.skippedNonMaster.length
-      );
-    if (res.skippedDisabled && res.skippedDisabled.length)
-      lines.push(
-        "Verint-disabled, left as-is: " +
-          res.skippedDisabled.map(privLabel).join(", ")
-      );
-    const clean = !(res.skippedAbsent && res.skippedAbsent.length);
-    status(esc(lines.join("\n")), clean ? "ok" : "warn");
+        : "Role saved and verified exact.";
+    showOutcome(esc(top), true);
   }
 
   // Export/Import mode buttons — both gate on the cached page recon. If not
@@ -523,7 +473,7 @@
   $("targetName").addEventListener("input", onTargetInput);
   $("continueBtn").addEventListener("click", onContinue);
   $("cancelBtn").addEventListener("click", reset);
-  $("successOkBtn").addEventListener("click", backToMode);
+  $("outcomeOkBtn").addEventListener("click", backToMode);
   loadMaster();
   reconPageSilent();
 })();

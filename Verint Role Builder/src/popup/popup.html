@@ -31,9 +31,9 @@
     <section id="report" class="hidden"></section>
 
     <section id="pickStep" class="hidden">
-      <label for="role">Role column in CSV</label>
+      <label for="role">Role name in role config *.CSV</label>
       <select id="role"></select>
-      <label for="targetName" class="opt">Save as role name</label>
+      <label for="targetName" class="opt">Name of the role to create</label>
       <input type="text" id="targetName" />
       <div id="targetNameErr" class="err hidden"></div>
       <div class="row">
@@ -52,9 +52,9 @@
 
     <section id="status" class="hidden"></section>
 
-    <section id="successStep" class="hidden">
-      <p id="successMsg" class="success"></p>
-      <button id="successOkBtn">OK</button>
+    <section id="outcomeStep" class="hidden">
+      <p id="outcomeMsg"></p>
+      <button id="outcomeOkBtn">OK</button>
     </section>
 
     <script src="../lib/protocol.js"></script>

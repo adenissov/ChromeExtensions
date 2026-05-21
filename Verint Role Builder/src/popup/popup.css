@@ -51,5 +51,8 @@ input[type="text"] { width: 100%; padding: 6px; margin-top: 4px; font: inherit; 
 .err { color: #b42318; }
 .ok { color: #1a7f37; }
 .warn { color: #9a6700; }
-#successStep { text-align: center; }
-.success { font-size: 15px; color: #1a7f37; margin: 0 0 12px; }
+#confirm { text-align: center; }
+#outcomeStep { text-align: center; }
+#outcomeMsg { font: inherit; font-weight: bold; margin: 0 0 12px; }
+#outcomeMsg.ok { color: #1a7f37; }
+#outcomeMsg.err { color: #b42318; }

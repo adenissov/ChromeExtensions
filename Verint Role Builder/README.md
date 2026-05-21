@@ -132,12 +132,12 @@ Cell rules:
    every error line is prefixed with the file name so it's obvious which
    file failed. Structural problems vs. the master list block everything
    until fixed.
-5. **Pick a role column** from the dropdown of roles discovered in the file.
-   Below the dropdown, a **Save as role name** input is pre-filled with the
-   column header — edit it to save the role under a different name (e.g. to
-   clone a role under a new name from an existing CSV column). The input
-   follows the dropdown until you edit it; after that it keeps your value.
-   You can **Cancel** here and nothing happens.
+5. **Pick a role column** from the **Role name in role config *.CSV** dropdown
+   of roles discovered in the file. Below it, a **Name of the role to create**
+   input is pre-filled with the column header — edit it to save the role under
+   a different name (e.g. to clone a role under a new name from an existing CSV
+   column). The input follows the dropdown until you edit it; after that it
+   keeps your value. You can **Cancel** here and nothing happens.
 6. The extension shows the **owner organization** it read from the page.
    Confirm it (or cancel).
 7. The extension checks whether **the target role name** exists under that
@@ -153,17 +153,18 @@ Cell rules:
    **exactly match** the chosen column: every `Yes` privilege on, **everything
    else off** — including any privileges the role currently has that the CSV
    does not mark `Yes` (strict mirror). Then it saves and re-verifies.
-9. Read the **result**: pass/fail and exactly which privileges changed,
-   including any CSV `Yes` privilege whose checkbox doesn't exist in this
-   environment (reported as skipped). Verification re-reads every checkbox; a
-   failure lists the off-target privileges and does **not** leave a half-saved
-   role (save is the single commit point). When a **new** role is created
-   successfully, the popup instead shows a green **Role "X" created
-   successfully** confirmation with an **OK** button that returns you to the
-   Export/Import start screen.
+9. Read the **outcome** — a single bold line in the dialog's own font, with a
+   blue **OK** button beneath it. **Green** on success (created, overwritten,
+   or already-matching), **red** on failure. There is no frame around it and no
+   statistics breakdown (changed-checkbox counts, live-extras, etc. are not
+   shown). Examples: *Role "X" created successfully*, *Role saved and verified
+   exact.*, *Role already matched the CSV exactly — nothing to save.*, or a red
+   failure reason. A failure does **not** leave a half-saved role (save is the
+   single commit point — verification re-reads every checkbox and rolls back on
+   any mismatch). Click **OK** to return to the Export/Import start screen.
 
 Re-running the same file/role is safe and idempotent: the second run reports
-"0 changes".
+that the role already matched.
 
 > The start screen no longer carries over the previous run's result panel —
 > reopening the popup always shows a clean Export/Import choice.
