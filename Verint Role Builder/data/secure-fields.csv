@@ -1,0 +1,44 @@
+SFID,Label
+1,First Name
+2,Middle Initial
+3,Last Name
+4,Suffix
+5,Birth Date
+6,Start Date
+7,End Date
+8,Employee ID
+45,Employee Type
+10,Tax ID (SSN)
+37,Is Supervisor
+11,Wage
+12,Supervisor
+40,Team Lead
+13,Organization
+14,Job Title
+26,Home Address
+28,Contact Description
+29,Contact Value
+34,Data Source Name
+35,Data Source Employee ID
+36,Data Source Password
+38,Rank
+39,Is Team Lead
+41,Proficiency
+42,Min/Max Paid Hours
+43,Preferred Start
+44,Chat Sessions
+50,OverTime Before Shift
+51,OverTime After Shift
+52,Voluntary Time Off At The Beginning Of The Shift
+53,Voluntary Time Off At The End Of The Shift
+46,Max OverTime Minutes Per Day
+47,Max OverTime Minutes Per Week
+48,Max Voluntary Time Off Hours Per Day
+49,Max Voluntary Time Off Hours Per Week
+54,Quality Score
+55,Data Source Extension ID
+56,Required Pay Period Hours
+57,Minimum Rest Period Per Week
+16,Emergency Contact Name
+17,Emergency Contact #
+18,CXD Start Date (mm/dd/yyyy)

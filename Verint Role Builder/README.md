@@ -6,10 +6,13 @@ page with two modes:
 - **Import** — build or update a Verint role from a multi-role **role
   configuration CSV**. Each role is a column of `Yes` (enable) / `---`
   (disable) values across every Verint privilege; the extension ticks/unticks
-  all checkboxes for the picked role in your logged-in tab.
+  all checkboxes for the picked role in your logged-in tab. The same column
+  also drives the role's **Secure Fields (Employees Module)** View/Edit
+  access (see §3a).
 - **Export** — read an existing role's privileges off the live Roles Setup
   page and download them as a CSV (same row order as the master privilege
-  list; one role-column per file). Read-only against Verint — nothing is
+  list; one role-column per file). The export also captures the role's
+  **Secure Fields** View/Edit state. Read-only against Verint — nothing is
   changed in the system.
 
 > **Status:** design phase. This document describes the intended user
@@ -113,6 +116,55 @@ Cell rules:
 
 ---
 
+## 3a. Secure Fields rows (Employees Module)
+
+The role editor has a **Secure Fields (Employees Module)** table that
+controls field-level access to employee data (First Name, Wage, Tax ID,
+Contact Value, …) — 43 fields, each with a **View** and an **Edit**
+checkbox. These are included in the same CSV as an extra **row group placed
+at the top of the file**, *before* the privilege rows, so you can review
+them without scrolling. They add **no new columns**.
+
+- The group is numbered in its **own `E01…ENN` sequence** (the privilege
+  rows keep their existing `NLine` numbers unchanged). Rows are recognised by
+  the `E` prefix, not by position — the leading placement is purely for
+  readability.
+- Because View and Edit are two separate checkboxes, each field is **two
+  rows**: a `(View)` row and an `(Edit)` row. The role cell stays `Yes` /
+  `---`, exactly like a privilege row.
+
+```
+NLine, PrivilegeName,         Module,    <Role 1>, … <Role N>
+E01,   First Name (View),     Employees, Yes,      …
+E02,   First Name (Edit),     Employees, ---,      …
+E03,   Last Name (View),      Employees, Yes,      …
+E04,   Last Name (Edit),      Employees, ---,      …
+…
+NLine, PrivilegeName,         Module,    …            (privilege rows follow)
+1,     …
+```
+
+| Column | Meaning for an `E` row |
+|---|---|
+| `NLine` | `E01`, `E02`, … — a separate sequence; **do not** renumber the privilege rows to match. |
+| `PrivilegeName` | The field label followed by ` (View)` or ` (Edit)`. The label must be one of the 43 known Employees-module fields. |
+| `Module` | `Employees`. |
+| *(role columns)* | `Yes` (grant) / `---` (deny), per role. |
+
+> **Important — Secure Fields are only editable when the role's owner
+> organization matches the org selected in the left-pane tree.** Verint
+> renders the Secure Fields checkboxes **read-only** for a role owned at a
+> *different* hierarchy level than the one you have selected (e.g. a role
+> owned at *City of Toronto* while *SSHA* is selected). When they are
+> read-only, Import **cannot** change them — it skips them and reports them,
+> exactly as it skips a disabled privilege checkbox. To set a role's Secure
+> Fields, select that role's own organization first.
+
+The `E`-section is **optional**: a CSV with no `E` rows still imports fine
+(only the privilege rows are applied), so older config files keep working.
+
+---
+
 ## 4. Importing a role (create / overwrite)
 
 1. Sign in to Verint LAB and go to **User Management → Security → Roles
@@ -152,7 +204,10 @@ Cell rules:
 8. On **Yes**, the extension expands the privilege tree and makes the role
    **exactly match** the chosen column: every `Yes` privilege on, **everything
    else off** — including any privileges the role currently has that the CSV
-   does not mark `Yes` (strict mirror). Then it saves and re-verifies.
+   does not mark `Yes` (strict mirror). It also mirrors the **Secure Fields**
+   View/Edit checkboxes to the column's `E`-rows — but only those that are
+   editable for the selected org (read-only ones are skipped and reported, not
+   forced; see §3a). Then it saves and re-verifies.
 9. Read the **outcome** — a single bold line in the dialog's own font, with a
    blue **OK** button beneath it. **Green** on success (created, overwritten,
    or already-matching), **red** on failure. There is no frame around it and no
@@ -187,28 +242,28 @@ shaped like `Role Export Sample.csv`.
 3. A dropdown appears listing all roles currently shown on the Roles Setup
    page. Pick one.
 4. Click **Export** in the dialog. The extension opens the role's editor,
-   reads every privilege checkbox, then cancels the editor (no change is
-   saved — export is read-only). No progress message is shown during this
-   step. The popup then shows a single green line, **Choose the destination
-   location** (in the dialog header's font), and the browser's Save As dialog
-   opens.
+   reads every privilege checkbox **and the Secure Fields View/Edit state**,
+   then cancels the editor (no change is saved — export is read-only). No
+   progress message is shown during this step. The popup then shows a single
+   line, **Export: Select destination folder**, and the browser's Save As
+   dialog opens.
 5. The browser's standard **Save As** dialog opens with the proposed file
    name:
    ```
    Verint Role Export_<role-name>_YYYY-MM-DD.csv
    ```
    Pick any folder and confirm. Characters that are not legal in a Windows
-   filename (`/ \ : * ? " < > |`) are replaced with `_`. The folder you save
-   into is **remembered**, so the next export's Save As dialog reopens there
-   instead of resetting to Downloads. (Chrome only permits this for folders
-   under your Downloads directory; if you save elsewhere the next dialog
-   falls back to Downloads.)
+   filename (`/ \ : * ? " < > |`) are replaced with `_`. The dialog opens at
+   whatever folder the browser used last (the extension proposes only the file
+   name — Chrome's downloads API does not let it preset an absolute folder).
 
 ### Output schema
 
-The CSV has the same row order as the embedded master privilege list
-(`Privilege Config List.csv`), so you can round-trip an export back through
-the importer by promoting the role column into a `Roles Config.csv`. Header:
+The export begins with the **Secure Fields `E`-section** (§3a — two rows per
+field, View then Edit), followed by the privilege rows in the same row order
+as the embedded master privilege list (`Privilege Config List.csv`), so you
+can round-trip an export back through the importer by promoting the role
+column into a `Roles Config.csv`. Privilege-row header:
 
 ```
 NLine, PrivilegeName, Module, <role name>
@@ -296,4 +351,9 @@ are changed.)
   Setup left-pane selection.
 - **Parent/child** — `View X` is the parent of `Edit X`/`Configure X`;
   enabling the child requires the parent.
+- **Secure Field** — one Employees-module data field (e.g. Wage, Tax ID) with
+  separate **View** and **Edit** access per role, set in the **Secure Fields
+  (Employees Module)** table of the role editor. Carried in the CSV as the
+  top `E01…ENN` row group (two rows per field). Editable only when the role's
+  owner org matches the selected org (see §3a).
 - **`ZZ_CLAUDE_TEST_*`** — naming convention for disposable LAB test roles.

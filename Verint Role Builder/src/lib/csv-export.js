@@ -17,10 +17,40 @@
   }
   const csvRow = (cells) => cells.map(csvField).join(",");
 
-  // master: { rows: [{ nLine, privId, module, name, isGroup }, …] }
+  // master: { rows: [{ nLine, privId, module, name, isGroup }, …],
+  //           secureFields?: { fields:[{sfid,label}] } }
   // enabledSet: Set<number> of privIds currently checked on the live form.
-  function buildExportCsv(master, roleName, enabledSet) {
+  // sfState (OPTIONAL): Map<sfid,{view,edit}> | obj — when present and non-
+  // empty, the Secure Fields E-section is emitted FIRST (two rows per field,
+  // View then Edit, sequential E01…ENN). Omitted/empty => privilege rows only,
+  // byte-identical to before (back-compat / round-trip).
+  function buildExportCsv(master, roleName, enabledSet, sfState) {
     const lines = [csvRow(["NLine", "PrivilegeName", "Module", roleName])];
+
+    const fields = master.secureFields && master.secureFields.fields;
+    const get = (sfid) =>
+      sfState instanceof Map ? sfState.get(sfid) : sfState && sfState[sfid];
+    const hasState = (m) =>
+      m instanceof Map ? m.size > 0 : !!(m && Object.keys(m).length);
+    if (fields && hasState(sfState)) {
+      let n = 1;
+      const eLine = (label, kind, on) =>
+        lines.push(
+          csvRow([
+            "E" + String(n++).padStart(2, "0"),
+            label + " (" + kind + ")",
+            "Employees",
+            on ? "Yes" : "---",
+          ])
+        );
+      for (const f of fields) {
+        const st = get(f.sfid) || {};
+        eLine(f.label, "View", st.view);
+        eLine(f.label, "Edit", st.edit);
+      }
+      lines.push(",,,"); // blank separator between E-section and privileges
+    }
+
     for (const r of master.rows) {
       if (r.isGroup) {
         lines.push(csvRow([r.nLine, r.name, "", ""]));

@@ -32,4 +32,18 @@
   }
 
   VRB.buildMaster = buildMaster;
+
+  // Secure-fields model. Schema: SFID, Label (43 rows, display order). SFID is
+  // non-contiguous (1-57 with gaps) — never assume 1..N.
+  // text -> { fields:[{sfid,label}], byLabel:Map<label,sfid>, bySfid:Map<sfid,field> }
+  function buildSecureFields(text) {
+    const { header, rows: raw } = VRB.parseCSV(text);
+    const ci = { sfid: header.indexOf("SFID"), label: header.indexOf("Label") };
+    const fields = raw.map((r) => ({ sfid: r[ci.sfid], label: r[ci.label] }));
+    const byLabel = new Map(fields.map((f) => [f.label, f.sfid]));
+    const bySfid = new Map(fields.map((f) => [f.sfid, f]));
+    return { fields, byLabel, bySfid };
+  }
+
+  VRB.buildSecureFields = buildSecureFields;
 })(typeof self !== "undefined" ? self : this);

@@ -8,6 +8,7 @@
   // against any Verint Impact360 v15 host (LAB + PROD). Roles Setup detection
   // is structural (frame src `role_setup_fs` / inner doc title), not by host.
   VRB.MASTER_PATH = "data/privilege-config-list.csv";
+  VRB.SF_PATH = "data/secure-fields.csv";
   VRB.TEST_PREFIX = "ZZ_CLAUDE_TEST_";
 
   // popup -> background -> bridge.js (in the active Verint tab)

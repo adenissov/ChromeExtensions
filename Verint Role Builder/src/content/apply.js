@@ -160,6 +160,94 @@
     return s;
   }
 
+  // ---- Secure Fields (Employees Module) -----------------------------------
+  // Two control families per field (identity = `value` = SFID; the id's
+  // trailing _rowIdx is display order, not stable):
+  //   * plain native checkbox `input[name="viewSFID"|"editSFID"][value=SFID]`
+  //     — 43 of each, present regardless of org. Editable fields carry their
+  //     checkmark here.
+  //   * disabled overlay `input[name="bChk_<kind>SFID"][value=SFID]` — rendered
+  //     ONLY for the few Verint-FORCED fields (e.g. First/Last Name,
+  //     Organization). Forced fields keep their checkmark on this overlay while
+  //     the plain input stays UNCHECKED; the overlay's `disabled` marks the
+  //     field read-only.
+  // State = "checkmark present on EITHER control" (OR the two). The forced
+  // fields are why neither alone suffices: bChk_-only missed every editable
+  // field; plain-only missed the forced ones. Live-confirmed 2026-05-22.
+  const sfSel = (kind, sfid) => `input[name="${kind}SFID"][value="${sfid}"]`;
+  const sfOverlaySel = (kind, sfid) =>
+    `input[name="bChk_${kind}SFID"][value="${sfid}"]`;
+
+  function sfReadState(doc, kind, sfid) {
+    const el = doc.querySelector(sfSel(kind, sfid));
+    const overlay = doc.querySelector(sfOverlaySel(kind, sfid));
+    if (!el && !overlay)
+      return { found: false, checked: false, locked: false, el: null };
+    const checked = !!(el && el.checked) || !!(overlay && overlay.checked);
+    const locked = !!((el && el.disabled) || (overlay && overlay.disabled));
+    return { found: true, checked, locked, el };
+  }
+  const sfDisabled = (s) => !!s.locked;
+
+  // For each SFID in sfMaster, read view+edit `.checked`.
+  // -> { [sfid]: { view, edit } }
+  function readSecureFields(doc, sfMaster) {
+    const out = {};
+    for (const sfid of sfMaster) {
+      out[sfid] = {
+        view: sfReadState(doc, "view", sfid).checked,
+        edit: sfReadState(doc, "edit", sfid).checked,
+      };
+    }
+    return out;
+  }
+
+  // Strict-mirror the Secure Fields to `plan` (parallel to applyStrictMirror).
+  // plan: [{ sfid, view, edit }]; sfMasterSet: Set of in-master SFIDs.
+  // Skips disabled / aria-disabled controls (collect skippedSF, never a
+  // mismatch). Returns { changedSF, skippedSF, mismatchesSF:[{sfid,kind,want}] }
+  // where mismatchesSF lists only ENABLED controls that didn't reach `want`.
+  async function applySecureFields(doc, plan, sfMasterSet) {
+    let changedSF = 0;
+    const skippedSF = [];
+    const work = [];
+    for (const p of plan) {
+      if (sfMasterSet && !sfMasterSet.has(p.sfid)) continue;
+      for (const kind of ["view", "edit"]) {
+        const want = !!p[kind];
+        const s = sfReadState(doc, kind, p.sfid);
+        if (!s.found) continue;
+        if (sfDisabled(s)) {
+          skippedSF.push({ sfid: p.sfid, kind });
+          continue;
+        }
+        if (s.checked === want) continue;
+        work.push({ kind, sfid: p.sfid, want, el: s.el });
+      }
+    }
+
+    let done = 0;
+    for (const w of work) {
+      if (w.el) setCheckbox(w.el, w.want);
+      changedSF++;
+      if (++done % BATCH === 0) await raf();
+    }
+
+    await sleep(POST_APPLY_DELAY_MS);
+
+    const mismatchesSF = [];
+    for (const p of plan) {
+      if (sfMasterSet && !sfMasterSet.has(p.sfid)) continue;
+      for (const kind of ["view", "edit"]) {
+        const want = !!p[kind];
+        const s = sfReadState(doc, kind, p.sfid);
+        if (!s.found || sfDisabled(s)) continue;
+        if (s.checked !== want) mismatchesSF.push({ sfid: p.sfid, kind, want });
+      }
+    }
+    return { changedSF, skippedSF, mismatchesSF };
+  }
+
   VRB.engine = {
     PRIV_SEL,
     listChecks,
@@ -168,5 +256,7 @@
     applyStrictMirror,
     mismatchList,
     readEnabled,
+    readSecureFields,
+    applySecureFields,
   };
 })(typeof self !== "undefined" ? self : this);

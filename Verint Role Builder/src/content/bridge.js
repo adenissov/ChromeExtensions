@@ -178,7 +178,7 @@
   // every enabled negative-id checkbox, then cancels back to the grid. The
   // form is never dirtied (we only read .checked, no setCheckbox), so Cancel
   // is prompt-free (no Verint native unsaved-changes guard).
-  async function exportRead({ roleName }) {
+  async function exportRead({ roleName, sfMaster }) {
     trace = [];
     if (!isRolesSetup()) return { error: "not_on_roles_setup" };
     const org = selectedOrg();
@@ -205,10 +205,14 @@
       return { error: String((e && e.message) || e) };
     }
     const enabled = [...E.readEnabled(R)];
-    log("exportRead read", { enabledCount: enabled.length });
+    const secureFields = E.readSecureFields(R, sfMaster || []);
+    log("exportRead read", {
+      enabledCount: enabled.length,
+      sfCount: Object.keys(secureFields).length,
+    });
     await cancelForm(R);
     await gridBack();
-    return { ownerOrg: org, roleName, enabledIds: enabled };
+    return { ownerOrg: org, roleName, enabledIds: enabled, secureFields };
   }
 
   function progress(p) {
@@ -320,18 +324,23 @@
     description,
     yesIds,
     masterIds,
+    secureFieldsPlan,
+    sfMasterSfids,
   }) {
     if (!isRolesSetup()) return { error: "not_on_roles_setup" };
     const tgt = targetRoleName || roleName;
     const src = sourceRoleName || tgt;
     const yesSet = new Set(yesIds);
     const masterSet = new Set(masterIds);
+    const sfPlan = secureFieldsPlan || [];
+    const sfMasterSet = new Set(sfMasterSfids || []);
     log("apply start", {
       mode,
       sourceRoleName: src,
       targetRoleName: tgt,
       yesCount: yesSet.size,
       masterCount: masterSet.size,
+      sfPlanCount: sfPlan.length,
     });
 
     let R =
@@ -350,9 +359,25 @@
       skippedNonMaster: (res.skippedNonMaster || []).length,
     });
 
+    // Secure Fields: strict-mirror after the privID pass. Disabled controls
+    // (org-mismatch read-only) are skipped, never a mismatch — like a disabled
+    // privID box. mismatchesSF folds into the same transactional gate.
+    const sfRes = await E.applySecureFields(R, sfPlan, sfMasterSet);
+    log("applySecureFields done", {
+      changedSF: sfRes.changedSF,
+      skippedSF: sfRes.skippedSF.length,
+      mismatchesSF: sfRes.mismatchesSF.length,
+    });
+
     // Idempotent edit: nothing was toggled and the role already matches the
     // CSV exactly — the form is not dirty, so discard it; nothing to save.
-    if (mode === "edit" && res.changed === 0 && res.mismatches.length === 0) {
+    if (
+      mode === "edit" &&
+      res.changed === 0 &&
+      sfRes.changedSF === 0 &&
+      res.mismatches.length === 0 &&
+      sfRes.mismatchesSF.length === 0
+    ) {
       log("-> no-op edit (already exact): cancel + return");
       const out = {
         ok: true,
@@ -361,6 +386,7 @@
         verify: "already-exact",
         skippedAbsent: res.skippedAbsent,
         skippedNonMaster: res.skippedNonMaster || [],
+        skippedSF: sfRes.skippedSF,
       };
       await persistResult(src, tgt, mode, out);
       await cancelForm(R);
@@ -368,16 +394,24 @@
       return out;
     }
 
-    // Transactional gate: final authoritative verify scan before Save.
+    // Transactional gate: final authoritative verify scan before Save. privID
+    // mismatches OR secure-field mismatches (enabled controls that didn't reach
+    // the plan) both block the Save and roll back.
     const finalMiss = E.mismatchList(R, yesSet, masterSet);
-    log("pre-save verify", { mismatches: finalMiss.length });
+    log("pre-save verify", {
+      mismatches: finalMiss.length,
+      mismatchesSF: sfRes.mismatchesSF.length,
+    });
 
-    if (finalMiss.length) {
+    if (finalMiss.length || sfRes.mismatchesSF.length) {
       // Verify FAILED — never write a wrong or partial role. Persist the
       // diagnostic BEFORE Cancel: a dirty-form Cancel triggers Verint's
       // native "changes will not be saved" confirm, which closes the popup;
       // storage survives that so the popup can re-render on next open.
-      log("-> verify failed: rollback, no save", finalMiss.length);
+      log("-> verify failed: rollback, no save", {
+        priv: finalMiss.length,
+        sf: sfRes.mismatchesSF.length,
+      });
       const out = {
         ok: false,
         reason:
@@ -390,7 +424,9 @@
         skippedAbsent: res.skippedAbsent,
         skippedDisabled: res.skippedDisabled || [],
         skippedNonMaster: res.skippedNonMaster || [],
+        skippedSF: sfRes.skippedSF,
         mismatches: finalMiss.slice(0, 50),
+        mismatchesSF: sfRes.mismatchesSF.slice(0, 50),
       };
       await persistResult(src, tgt, mode, out);
       await cancelForm(R);
@@ -412,6 +448,7 @@
         saved: false,
         skippedAbsent: res.skippedAbsent,
         skippedNonMaster: res.skippedNonMaster || [],
+        skippedSF: sfRes.skippedSF,
       };
       await persistResult(src, tgt, mode, out);
       await cancelForm(rightDoc());
@@ -425,12 +462,15 @@
     const out = {
       ok: true,
       changed: res.changed,
+      changedSF: sfRes.changedSF,
       saved: true,
       verify: "verified-exact",
       skippedAbsent: res.skippedAbsent,
       skippedDisabled: res.skippedDisabled || [],
       skippedNonMaster: res.skippedNonMaster || [],
+      skippedSF: sfRes.skippedSF,
       mismatches: [],
+      mismatchesSF: [],
     };
     await persistResult(src, tgt, mode, out);
     return out;

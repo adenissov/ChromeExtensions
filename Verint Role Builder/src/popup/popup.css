@@ -13,7 +13,7 @@ h1 { font-size: 15px; margin: 0 0 12px; text-align: center; }
   font-size: 15px;
   font-weight: bold;
 }
-#exportPrompt { color: #1a7f37; text-align: center; }
+#exportPrompt { color: #000; font-weight: normal; text-align: center; }
 section { margin-bottom: 12px; }
 .hidden { display: none; }
 .row { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }

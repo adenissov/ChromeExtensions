@@ -131,7 +131,8 @@ README.md  ARCHITECTURE.md
 - `host_permissions: ["https://mv311ver03d.corp.toronto.ca/*"]` (single host).
 - One static `content_scripts` entry: host match, `all_frames:true`,
   `document_idle`, injecting **only** `bridge.js`.
-- `web_accessible_resources`: `data/privilege-config-list.csv` for the host.
+- No `web_accessible_resources`: `data/*.csv` are fetched by the popup (an
+  extension page) via `chrome.runtime.getURL`, which does not require it.
 
 ---
 
@@ -450,9 +451,9 @@ popup open  →  silent recon  →  pageOk?
 | Filename | `Verint Role Export_<role>_YYYY-MM-DD.csv` | Per spec. Date is local-time `toISOString().slice(0,10)`. |
 | Filename sanitization | Replace `/\:*?"<>|` and control chars in role name with `_` | Windows-invalid characters; everything else (incl. spaces) passes through. |
 | Download mechanism | `chrome.downloads.download({ url: data-URL, filename, saveAs: true })` from the **background SW** | `saveAs:true` triggers the native folder picker; the SW outlives the popup (which the Save-As dialog tears down), so the hint is honored every run. |
-| Save-As prompt | Frameless green line **"Choose the destination location"** in the dialog header's font/size (`#exportPrompt`), shown when the download is kicked off | Per spec — replaced the framed `#status` "Export ready…" panel. The framed `#status` is kept only for the export *error* path. |
+| Save-As prompt | Frameless black line **"Export: Select destination folder"** in the dialog header's font/size, normal weight (`#exportPrompt`), shown when the download is kicked off | Per spec — replaced the framed `#status` "Export ready…" panel. The framed `#status` is kept only for the export *error* path. |
 | Export progress message | **None.** No "Opening editor…" status between Export-click and the Save-As prompt (2026-05-20) | Per spec; the editor open/read/cancel is fast and the only message the user needs is the destination prompt. |
-| Persist save folder | SW records the completed download's directory (`downloads.onChanged → filename.current`, `dirOf`) in `chrome.storage.local.vrbExportDir`; next export requests `<dir>/<basename>` so the dialog reopens there | Chrome's Save-As always defaults to Downloads — it does not remember the last folder. Chrome rejects absolute / `..` paths in `downloads.download`, so the request is **guarded**: a runtime error retries once with the bare basename (degrade to Downloads, never fail the export). Effective reuse therefore covers folders Chrome accepts as a relative path (under Downloads); other folders fall back. |
+| Persist save folder | **Removed (2026-05-22).** `downloads.download`'s `filename` must be relative to Downloads, so prepending the absolute last-used directory was rejected with "Invalid filename" on every export after the first — it logged an error then fell back to the basename, and the dialog never actually reopened at the saved folder. Now the SW passes only the basename; the browser's own Save-As dialog remembers the last location. (Removed `vrbExportDir`, `downloads.onChanged`, `dirOf`, and the retry.) |
 | CSV quoting | RFC4180: quote only fields containing `,`, `"`, `\n`, or `\r`; double internal quotes | Sample uses bare unquoted leading spaces — quoting only when required keeps round-trip simple. |
 | Concurrency | **No background lock** — Export does not Save and does not contend with Import's apply lock | Import's `applyInFlight` guard is preserved as-is. If an Import is mid-run, Export reads can still proceed (different message path). |
 
@@ -551,3 +552,82 @@ Add `"downloads"` to `permissions`. Host pattern unchanged
   `#outcomeMsg`, and the 12px on `#targetNameErr` were removed so nothing
   overrides it. Colour classes (`.err`/`.ok`/`.warn`) and the framed border on
   `#report`/`#status` are unchanged.
+
+---
+
+## 11. Secure Fields (Employees Module) — export/import (2026-05-21)
+
+Adds the role editor's **Secure Fields (Employees Module)** table to both
+Export and Import, inside the *same* CSV. Recon: `dev/recon/secure-fields-recon.md`.
+
+### DOM model (recon-confirmed)
+
+| Aspect | Fact |
+|---|---|
+| Container | `table#workpaneMediator_sfList_tbl_id` in the `oRightPaneContent` form doc (same frame as the privID tree). 1 header row (`<th>View/Edit/Description</th>`) + 43 field rows. |
+| View checkbox (canonical) | `input[type=checkbox][name="viewSFID"]`, `value="<SFID>"`, `id="viewSFID_<SFID>_<rowIdx>"`. **43 present, all rows** — `.checked` is the authoritative state. |
+| Edit checkbox (canonical) | `input[type=checkbox][name="editSFID"]`, `value="<SFID>"`, `id="editSFID_<SFID>_<rowIdx>"`. 43 present. |
+| Forced-field overlay | `input[name="bChk_<kind>SFID"][value="<SFID>"]` (wrapped in `<a role="checkbox" class="disabledCheckboxWrapper" aria-disabled>`) is rendered **only for the few Verint-forced fields** (e.g. First/Last Name, Organization). Its `disabled` marks that field read-only. For forced fields the **checkmark sits on this overlay** while the plain `viewSFID`/`editSFID` input stays **unchecked** — so state must be read as the **OR of plain ∨ overlay** `.checked` (neither alone is complete; live-confirmed 2026-05-22). |
+| Identity | **`value` = SFID** (stable; non-contiguous 1–57 w/ gaps). The id's trailing `_<rowIdx>` is display order, not stable. |
+| Editability | A field is locked when its `bChk_` overlay exists and is `disabled` (Verint-forced); those are skipped on apply, never a mismatch — like a disabled privID box. The remaining fields are editable. (The earlier "gated by owner-org match" theory was wrong — disproven 2026-05-22; ~40 of 43 are editable for `adeniss` here.) |
+
+### Embedded data
+
+`extension/data/secure-fields.csv` (new packaged data file, fetched by the
+popup via `chrome.runtime.getURL` — no `web_accessible_resources` entry, same
+as the master), schema
+`SFID,Label`, 43 rows in display order. Loaded by `privileges.js`
+(`VRB.buildSecureFields(text) -> { fields:[{sfid,label}], byLabel, bySfid }`)
+and attached to the master object as `master.secureFields` by the popup and
+the test harness.
+
+### CSV E-section
+
+- **Placed first**, after the header, before the privilege rows (user
+  preference — quick review without scrolling). Recognised by NLine prefix
+  `/^E\d+$/`, **not** by position.
+- **Two rows per field** (View row + Edit row), `NLine` = `E01…ENN` (own
+  sequence; privilege `NLine`s unchanged). `PrivilegeName` = `<label> (View)`
+  / `<label> (Edit)`; `Module` = `Employees`; role cell = `Yes`/`---`.
+- Reuses the existing `Yes`/`---` binary across validate/export/apply — maps
+  1:1 onto the two DOM checkboxes.
+
+### Validation (`validate.js`)
+
+`validateStructure` **partitions uploaded rows by NLine prefix**: `E`-rows
+vs. privilege rows. Privilege rows are mirrored positionally against the
+master exactly as before (E-rows filtered out first, so their leading
+placement doesn't shift the mirror; error line numbers use original row
+index). `E`-rows are validated by: `PrivilegeName` matches
+`^(.*) \((View|Edit)\)$`, label ∈ `master.secureFields.byLabel`, cell ∈
+`{Yes,---}`. The E-section is **optional** (zero E-rows still validates —
+back-compat). `buildPlan` additionally returns `secureFieldsPlan` =
+`[{ sfid, view:bool, edit:bool }]` for the chosen column.
+
+### Engine (`apply.js`) & bridge
+
+- `readSecureFields(doc)` — for each known SFID, state = `.checked` of the
+  plain `input[name="viewSFID"|"editSFID"][value=SFID]` **OR** of the
+  `bChk_<kind>SFID` overlay (forced fields keep the check on the overlay). A
+  `disabled` overlay also flags the field locked (apply skips it). Returns
+  `{ sfid: {view,edit} }`.
+- `applySecureFields(doc, plan, sfMasterSet)` — strict-mirror parallel to
+  `applyStrictMirror`: drive each in-master SFID's view/edit checkbox to the
+  plan; **skip `disabled`/`aria-disabled` controls** (report `skippedSF`,
+  never a mismatch); include real discrepancies in the same transactional
+  gate (roll back, no Save).
+- `bridge.exportRead` returns the secure-fields state alongside `enabledIds`;
+  `bridge.apply` drives `applySecureFields` after the privID pass. Carried on
+  the existing `EXPORT_READ` / `APPLY` messages (extra fields; no new type).
+
+### Export (`csv-export.js`)
+
+`buildExportCsv` emits the **E-section first** (two rows per field from the
+read state), then the privilege rows. Round-trip stays exact.
+
+### Pending live verification
+
+The owner-org-match unlock and the toggle path are confirmed by the user but
+not yet re-exercised live (recon §4/§5). To confirm with SSHA selected:
+open an SSHA-owned role, verify all 43 controls render enabled, the toggle
+works, and whether enabling Edit auto-enables View.

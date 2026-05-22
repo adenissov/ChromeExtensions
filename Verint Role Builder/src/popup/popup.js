@@ -128,10 +128,12 @@
   }
 
   async function loadMaster() {
-    const txt = await fetch(chrome.runtime.getURL(VRB.MASTER_PATH)).then((r) =>
-      r.text()
-    );
-    state.master = VRB.buildMaster(txt);
+    const [mTxt, sfTxt] = await Promise.all([
+      fetch(chrome.runtime.getURL(VRB.MASTER_PATH)).then((r) => r.text()),
+      fetch(chrome.runtime.getURL(VRB.SF_PATH)).then((r) => r.text()),
+    ]);
+    state.master = VRB.buildMaster(mTxt);
+    state.master.secureFields = VRB.buildSecureFields(sfTxt);
   }
 
   // Silently recon the active tab on popup open and cache the result. The
@@ -299,6 +301,7 @@
     const masterIds = state.master.rows
       .filter((r) => !r.isGroup)
       .map((r) => r.privId);
+    const sfMasterSfids = state.master.secureFields.fields.map((f) => f.sfid);
 
     const lock = await bg({ bg: "acquire" });
     if (!lock.ok) {
@@ -314,6 +317,8 @@
         description: targetRoleName,
         yesIds: plan.yesIds,
         masterIds,
+        secureFieldsPlan: plan.secureFieldsPlan,
+        sfMasterSfids,
       });
       const created = mode === "create" && !res.error && res.ok !== false;
       if (created)
@@ -380,9 +385,11 @@
     show("exportStep", false);
     show("report", false);
 
+    const sfMasterSfids = state.master.secureFields.fields.map((f) => f.sfid);
     const res = await sendTab({
       type: VRB.MSG.EXPORT_READ,
       roleName,
+      sfMaster: sfMasterSfids,
     });
     if (res.error) {
       status(
@@ -394,7 +401,12 @@
     }
 
     const enabledSet = new Set(res.enabledIds || []);
-    const csv = VRB.buildExportCsv(state.master, roleName, enabledSet);
+    const csv = VRB.buildExportCsv(
+      state.master,
+      roleName,
+      enabledSet,
+      res.secureFields
+    );
     const filename = VRB.exportFilename(roleName);
     // Use a base64 data URL (not a blob URL) so the download is independent
     // of the popup's life cycle. The Save-As dialog steals focus and tears
