@@ -131,7 +131,8 @@ them without scrolling. They add **no new columns**.
   readability.
 - Because View and Edit are two separate checkboxes, each field is **two
   rows**: a `(View)` row and an `(Edit)` row. The role cell stays `Yes` /
-  `---`, exactly like a privilege row.
+  `---`, exactly like a privilege row. A **blank row** separates the
+  `E`-section from the privilege rows.
 
 ```
 NLine, PrivilegeName,         Module,    <Role 1>, … <Role N>
@@ -140,6 +141,7 @@ E02,   First Name (Edit),     Employees, ---,      …
 E03,   Last Name (View),      Employees, Yes,      …
 E04,   Last Name (Edit),      Employees, ---,      …
 …
+,,,                                                    (blank separator)
 NLine, PrivilegeName,         Module,    …            (privilege rows follow)
 1,     …
 ```
@@ -147,18 +149,20 @@ NLine, PrivilegeName,         Module,    …            (privilege rows follow)
 | Column | Meaning for an `E` row |
 |---|---|
 | `NLine` | `E01`, `E02`, … — a separate sequence; **do not** renumber the privilege rows to match. |
-| `PrivilegeName` | The field label followed by ` (View)` or ` (Edit)`. The label must be one of the 43 known Employees-module fields. |
-| `Module` | `Employees`. |
-| *(role columns)* | `Yes` (grant) / `---` (deny), per role. |
+| `PrivilegeName` | The field label followed by ` (View)` or ` (Edit)`. **This is the only thing validated** — the label must be one of the 43 known Employees-module fields. |
+| `Module` | `Employees` (not validated). |
+| *(role columns)* | `Yes` sets the checkbox; anything else (`---`, blank, …) clears it. |
 
-> **Important — Secure Fields are only editable when the role's owner
-> organization matches the org selected in the left-pane tree.** Verint
-> renders the Secure Fields checkboxes **read-only** for a role owned at a
-> *different* hierarchy level than the one you have selected (e.g. a role
-> owned at *City of Toronto* while *SSHA* is selected). When they are
-> read-only, Import **cannot** change them — it skips them and reports them,
-> exactly as it skips a disabled privilege checkbox. To set a role's Secure
-> Fields, select that role's own organization first.
+**Each `E` row is applied independently.** On import, every present `E` row
+sets or clears just its own checkbox; any row you omit is left untouched. You
+can include all 86, just a few, or none.
+
+> **Read-only (forced) fields.** Verint forces a few fields on (e.g. First
+> Name, Last Name, Organization) and renders them as **disabled** checkboxes.
+> Import cannot change a disabled checkbox — it skips it and reports it,
+> exactly as it skips a disabled privilege checkbox. The remaining fields are
+> editable. (If a *whole* role's Secure Fields appear locked, that is an
+> account/permission condition, not the CSV.)
 
 The `E`-section is **optional**: a CSV with no `E` rows still imports fine
 (only the privilege rows are applied), so older config files keep working.
@@ -354,6 +358,6 @@ are changed.)
 - **Secure Field** — one Employees-module data field (e.g. Wage, Tax ID) with
   separate **View** and **Edit** access per role, set in the **Secure Fields
   (Employees Module)** table of the role editor. Carried in the CSV as the
-  top `E01…ENN` row group (two rows per field). Editable only when the role's
-  owner org matches the selected org (see §3a).
+  top `E01…ENN` row group (two rows per field), applied per-row on import. A
+  few Verint-forced fields render read-only and are skipped (see §3a).
 - **`ZZ_CLAUDE_TEST_*`** — naming convention for disposable LAB test roles.

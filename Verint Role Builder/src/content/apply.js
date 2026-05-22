@@ -202,9 +202,11 @@
     return out;
   }
 
-  // Strict-mirror the Secure Fields to `plan` (parallel to applyStrictMirror).
-  // plan: [{ sfid, view, edit }]; sfMasterSet: Set of in-master SFIDs.
-  // Skips disabled / aria-disabled controls (collect skippedSF, never a
+  // Apply the Secure Fields plan: one entry per E-row that was in the CSV →
+  // set/clear exactly that checkbox. Controls with no corresponding plan entry
+  // (the CSV omitted that row) are LEFT UNTOUCHED. plan:
+  // [{ sfid, kind:'view'|'edit', want:bool }]; sfMasterSet: Set of in-master
+  // SFIDs. Skips disabled / locked controls (collect skippedSF, never a
   // mismatch). Returns { changedSF, skippedSF, mismatchesSF:[{sfid,kind,want}] }
   // where mismatchesSF lists only ENABLED controls that didn't reach `want`.
   async function applySecureFields(doc, plan, sfMasterSet) {
@@ -213,17 +215,14 @@
     const work = [];
     for (const p of plan) {
       if (sfMasterSet && !sfMasterSet.has(p.sfid)) continue;
-      for (const kind of ["view", "edit"]) {
-        const want = !!p[kind];
-        const s = sfReadState(doc, kind, p.sfid);
-        if (!s.found) continue;
-        if (sfDisabled(s)) {
-          skippedSF.push({ sfid: p.sfid, kind });
-          continue;
-        }
-        if (s.checked === want) continue;
-        work.push({ kind, sfid: p.sfid, want, el: s.el });
+      const s = sfReadState(doc, p.kind, p.sfid);
+      if (!s.found) continue;
+      if (sfDisabled(s)) {
+        skippedSF.push({ sfid: p.sfid, kind: p.kind });
+        continue;
       }
+      if (s.checked === p.want) continue;
+      work.push({ kind: p.kind, sfid: p.sfid, want: p.want, el: s.el });
     }
 
     let done = 0;
@@ -238,12 +237,10 @@
     const mismatchesSF = [];
     for (const p of plan) {
       if (sfMasterSet && !sfMasterSet.has(p.sfid)) continue;
-      for (const kind of ["view", "edit"]) {
-        const want = !!p[kind];
-        const s = sfReadState(doc, kind, p.sfid);
-        if (!s.found || sfDisabled(s)) continue;
-        if (s.checked !== want) mismatchesSF.push({ sfid: p.sfid, kind, want });
-      }
+      const s = sfReadState(doc, p.kind, p.sfid);
+      if (!s.found || sfDisabled(s)) continue;
+      if (s.checked !== p.want)
+        mismatchesSF.push({ sfid: p.sfid, kind: p.kind, want: p.want });
     }
     return { changedSF, skippedSF, mismatchesSF };
   }

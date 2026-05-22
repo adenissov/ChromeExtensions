@@ -72,25 +72,20 @@
       }
     }
 
+    // Secure-fields (E) rows are applied independently, so the ONLY check is
+    // that each PrivilegeName resolves to a known secure field
+    // ("<label> (View)" / "<label> (Edit)"). Any subset is allowed (missing
+    // rows are fine) and cell values are NOT validated — on apply anything
+    // other than "Yes" clears the box.
     if (eRows.length) {
       const sf = master.secureFields;
       if (!sf || !sf.byLabel) {
         push(`Secure-fields (E) rows present but the secure-fields master is not loaded.`);
       } else {
         for (const { r: up, origIdx } of eRows) {
-          const ln = `row ${origIdx + 2}`;
           const mm = /^(.*) \((View|Edit)\)$/.exec(up[iName] || "");
-          if (!mm) {
-            push(`${ln}: secure-field name must end with " (View)" or " (Edit)" (got "${up[iName]}").`);
-            continue;
-          }
-          if (!sf.byLabel.has(mm[1]))
-            push(`${ln}: unknown secure field "${mm[1]}".`);
-          for (const rc of roleCols) {
-            const v = up[rc.colIdx];
-            if (v !== "Yes" && v !== "---")
-              push(`${ln}: role "${rc.name}" must be Yes or --- (got "${v}").`);
-          }
+          if (!mm || !sf.byLabel.has(mm[1]))
+            push(`row ${origIdx + 2}: unknown secure field PrivilegeName "${up[iName]}".`);
         }
       }
     }
@@ -130,7 +125,10 @@
       if (privRows[i] && privRows[i][colIdx] === "Yes") yes.add(m.privId);
     }
 
-    const sf = new Map(); // sfid -> {view,edit}
+    // One entry per PRESENT E-row → set/clear exactly that checkbox on apply;
+    // rows absent from the CSV are left untouched. Unknown/unparseable names
+    // are skipped here (validateStructure already flags them as errors).
+    const sfPlan = [];
     const byLabel = master.secureFields && master.secureFields.byLabel;
     if (byLabel) {
       for (const r of eRows) {
@@ -138,16 +136,14 @@
         if (!mm) continue;
         const sfid = byLabel.get(mm[1]);
         if (sfid == null) continue;
-        const e = sf.get(sfid) || { sfid, view: false, edit: false };
-        e[mm[2].toLowerCase()] = r[colIdx] === "Yes";
-        sf.set(sfid, e);
+        sfPlan.push({ sfid, kind: mm[2].toLowerCase(), want: r[colIdx] === "Yes" });
       }
     }
 
     return {
       yesIds: [...yes],
       yesCount: yes.size,
-      secureFieldsPlan: [...sf.values()],
+      secureFieldsPlan: sfPlan,
     };
   }
 

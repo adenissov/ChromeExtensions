@@ -584,13 +584,16 @@ the test harness.
 ### CSV E-section
 
 - **Placed first**, after the header, before the privilege rows (user
-  preference — quick review without scrolling). Recognised by NLine prefix
-  `/^E\d+$/`, **not** by position.
+  preference — quick review without scrolling), then a **blank separator row**
+  (`,,,`) before the privilege rows. Recognised by NLine prefix `/^E\d+$/`,
+  **not** by position; blank rows are skipped.
 - **Two rows per field** (View row + Edit row), `NLine` = `E01…ENN` (own
   sequence; privilege `NLine`s unchanged). `PrivilegeName` = `<label> (View)`
   / `<label> (Edit)`; `Module` = `Employees`; role cell = `Yes`/`---`.
-- Reuses the existing `Yes`/`---` binary across validate/export/apply — maps
-  1:1 onto the two DOM checkboxes.
+- **Each E-row is independent on import.** Any subset may be present (missing
+  rows leave their checkbox untouched); on apply, `Yes` sets the box and
+  anything else clears it. Reuses the `Yes`/`---` binary, mapping 1:1 onto the
+  two DOM checkboxes.
 
 ### Validation (`validate.js`)
 
@@ -598,11 +601,15 @@ the test harness.
 vs. privilege rows. Privilege rows are mirrored positionally against the
 master exactly as before (E-rows filtered out first, so their leading
 placement doesn't shift the mirror; error line numbers use original row
-index). `E`-rows are validated by: `PrivilegeName` matches
-`^(.*) \((View|Edit)\)$`, label ∈ `master.secureFields.byLabel`, cell ∈
-`{Yes,---}`. The E-section is **optional** (zero E-rows still validates —
-back-compat). `buildPlan` additionally returns `secureFieldsPlan` =
-`[{ sfid, view:bool, edit:bool }]` for the chosen column.
+index; blank separator rows — empty `NLine` — are skipped). The **only**
+check on an `E`-row is that its `PrivilegeName` resolves to a known secure
+field: matches `^(.*) \((View|Edit)\)$` **and** label ∈
+`master.secureFields.byLabel`. Cell values are **not** validated (any subset
+of rows is allowed; missing rows are fine — the E-section is optional and
+back-compat). `buildPlan` returns `secureFieldsPlan` as one entry **per
+present E-row**: `[{ sfid, kind:'view'|'edit', want:bool }]` (`want` =
+cell === `Yes`). `applySecureFields` sets/clears exactly those checkboxes;
+rows the CSV omitted are left untouched.
 
 ### Engine (`apply.js`) & bridge
 
@@ -611,11 +618,12 @@ back-compat). `buildPlan` additionally returns `secureFieldsPlan` =
   `bChk_<kind>SFID` overlay (forced fields keep the check on the overlay). A
   `disabled` overlay also flags the field locked (apply skips it). Returns
   `{ sfid: {view,edit} }`.
-- `applySecureFields(doc, plan, sfMasterSet)` — strict-mirror parallel to
-  `applyStrictMirror`: drive each in-master SFID's view/edit checkbox to the
-  plan; **skip `disabled`/`aria-disabled` controls** (report `skippedSF`,
-  never a mismatch); include real discrepancies in the same transactional
-  gate (roll back, no Save).
+- `applySecureFields(doc, plan, sfMasterSet)` — drives one checkbox per plan
+  entry (`{ sfid, kind, want }`, i.e. per present E-row) to `want`; controls
+  with no plan entry are **left untouched** (not strict-mirrored). **Skips
+  `disabled`/locked controls** (report `skippedSF`, never a mismatch);
+  includes real discrepancies in the same transactional gate (roll back, no
+  Save).
 - `bridge.exportRead` returns the secure-fields state alongside `enabledIds`;
   `bridge.apply` drives `applySecureFields` after the privID pass. Carried on
   the existing `EXPORT_READ` / `APPLY` messages (extra fields; no new type).
