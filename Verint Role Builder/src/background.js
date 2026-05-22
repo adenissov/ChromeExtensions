@@ -9,6 +9,34 @@
 // default Downloads folder. Moving the call into the SW (which outlives the
 // popup) makes saveAs:true reliable on every run.
 let applyInFlight = false;
+// IDs of downloads this extension initiated, so we know when to re-open the
+// popup. Module-scope so the SW can match them in the onChanged listener even
+// after the popup is torn down by the Save-As focus-steal.
+const vrbDownloadIds = new Set();
+const vrbDownloadMeta = new Map(); // downloadId -> { roleName }
+
+// When our export download finishes: store the result for the popup to display,
+// then re-open the popup. Must be at module scope so Chrome wakes the SW.
+chrome.downloads.onChanged.addListener(async (delta) => {
+  if (!vrbDownloadIds.has(delta.id)) return;
+  if (!delta.state) return;
+  if (delta.state.current === "complete" || delta.state.current === "interrupted") {
+    const id = delta.id;
+    const meta = vrbDownloadMeta.get(id) || {};
+    vrbDownloadIds.delete(id);
+    vrbDownloadMeta.delete(id);
+    if (delta.state.current === "complete") {
+      try {
+        const items = await chrome.downloads.search({ id });
+        const filePath = (items && items[0] && items[0].filename) || "";
+        await chrome.storage.session.set({
+          vrbExportResult: { roleName: meta.roleName || "", filePath },
+        });
+      } catch (_) {}
+    }
+    chrome.action.openPopup().catch(() => {});
+  }
+});
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.bg === "acquire") {
@@ -34,12 +62,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     chrome.downloads.download(
       { url: msg.dataUrl, filename: msg.filename, saveAs: true },
       (id) => {
-        if (chrome.runtime.lastError)
+        if (chrome.runtime.lastError) {
           console.error("[VRB] download failed:", chrome.runtime.lastError.message);
-        else console.log("[VRB] download started id=" + id);
+          sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+          return;
+        }
+        console.log("[VRB] download started id=" + id);
+        vrbDownloadIds.add(id);
+        vrbDownloadMeta.set(id, { roleName: msg.roleName || "" });
+        sendResponse({ ok: true, downloadId: id });
       }
     );
-    sendResponse({ ok: true });
-    return; // sync
+    return true; // async — sendResponse called in callback
   }
 });

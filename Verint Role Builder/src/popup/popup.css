@@ -5,10 +5,11 @@ body {
   margin: 0;
   padding: 14px;
   color: #1f2328;
+  position: relative;
 }
 h1 { font-size: 15px; margin: 0 0 12px; text-align: center; }
 /* All prompts/messages share the h1 header font: Segoe UI 15px, bold. */
-#report, #status, #confirmMsg, #outcomeMsg, #exportPrompt, #targetNameErr {
+#report, #status, #confirmMsg, #outcomeMsg, #exportPrompt, #exportResultMsg, #targetNameErr {
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 15px;
   font-weight: bold;
@@ -18,7 +19,20 @@ section { margin-bottom: 12px; }
 .hidden { display: none; }
 .row { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }
 .col { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; align-items: center; }
-#modeStep button { width: 50%; }
+#modeStep .col button { width: 50%; }
+.close-btn {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  padding: 0 5px;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 18px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+.close-btn:hover { color: #000; }
 #uploadStep, #exportStep, #pickStep { text-align: center; }
 #uploadHint { margin: 0; color: #444; }
 button {
@@ -59,5 +73,7 @@ input[type="text"] { width: 100%; padding: 6px; margin-top: 4px; font: inherit; 
 #confirm { text-align: center; }
 #outcomeStep { text-align: center; }
 #outcomeMsg { margin: 0 0 12px; }
+#exportResultStep { text-align: center; }
+#exportResultMsg { margin: 0 0 12px; }
 #outcomeMsg.ok { color: #1a7f37; }
 #outcomeMsg.err { color: #b42318; }

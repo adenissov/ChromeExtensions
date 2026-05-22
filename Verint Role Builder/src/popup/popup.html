@@ -8,6 +8,7 @@
     <h1>Verint Role Export/Import</h1>
 
     <section id="modeStep">
+      <button id="closeBtn" class="close-btn" title="Close">&times;</button>
       <div class="col">
         <button id="exportBtn">Export</button>
         <button id="importBtn">Import</button>
@@ -57,6 +58,11 @@
     <section id="outcomeStep" class="hidden">
       <p id="outcomeMsg"></p>
       <button id="outcomeOkBtn">OK</button>
+    </section>
+
+    <section id="exportResultStep" class="hidden">
+      <p id="exportResultMsg"></p>
+      <button id="exportResultOkBtn">OK</button>
     </section>
 
     <script src="../lib/protocol.js"></script>

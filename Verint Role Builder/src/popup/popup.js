@@ -100,11 +100,32 @@
     show("outcomeStep", true);
   }
 
+  function showExportResult(roleName, filePath) {
+    ["report", "pickStep", "confirm", "status", "exportStep", "exportPrompt",
+     "modeStep", "uploadStep", "outcomeStep"].forEach((i) => show(i, false));
+    $("exportResultMsg").textContent =
+      'Role "' + roleName + '" exported to ' + filePath + ".";
+    show("exportResultStep", true);
+  }
+
+  // On popup open, check whether the SW stored an export result while the popup
+  // was closed (focus-steal teardown during Save-As). If so, show it instead
+  // of the start page.
+  async function checkExportResult() {
+    try {
+      const data = await chrome.storage.session.get("vrbExportResult");
+      if (data.vrbExportResult) {
+        await chrome.storage.session.remove("vrbExportResult");
+        showExportResult(data.vrbExportResult.roleName, data.vrbExportResult.filePath);
+      }
+    } catch (_) {}
+  }
+
   // Back to the mode-select screen from either the upload step or the export
   // step. Used by exportCancel, the outcome OK button, and after a successful
   // export.
   function backToMode() {
-    ["uploadStep", "exportStep", "report", "status", "exportPrompt", "outcomeStep"].forEach((i) =>
+    ["uploadStep", "exportStep", "report", "status", "exportPrompt", "outcomeStep", "exportResultStep"].forEach((i) =>
       show(i, false)
     );
     show("modeStep", true);
@@ -427,10 +448,13 @@
     // hint on the first run only (popup teardown on focus-loss dropped the
     // option on subsequent runs, so the file went silently to Downloads).
     // The SW outlives the popup, so saveAs:true is honored every time.
-    const out = await bg({ bg: "download", dataUrl, filename });
+    const out = await bg({ bg: "download", dataUrl, filename, roleName });
     if (out && out.ok) {
-      show("status", false);
+      $("exportPrompt").textContent = "Exporting…";
       show("exportPrompt", true);
+      // Popup will be torn down by the Save-As focus-steal; the SW detects
+      // completion via downloads.onChanged, stores the result, and calls
+      // openPopup() so the result dialog appears on the next open.
     } else {
       status(
         '<span class="err">Download failed: ' +
@@ -462,6 +486,7 @@
     if (!$("file").files.length) backToMode();
   }
 
+  $("closeBtn").addEventListener("click", () => window.close());
   $("exportBtn").addEventListener("click", onExportClick);
   $("importBtn").addEventListener("click", onImportClick);
   $("exportConfirmBtn").addEventListener("click", onExportConfirm);
@@ -474,6 +499,8 @@
   $("continueBtn").addEventListener("click", onContinue);
   $("cancelBtn").addEventListener("click", reset);
   $("outcomeOkBtn").addEventListener("click", backToMode);
+  $("exportResultOkBtn").addEventListener("click", backToMode);
   loadMaster();
   reconPageSilent();
+  checkExportResult();
 })();
