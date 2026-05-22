@@ -322,7 +322,7 @@
       });
       const created = mode === "create" && !res.error && res.ok !== false;
       if (created)
-        showOutcome('Role "' + esc(targetRoleName) + '" created successfully', true);
+        showOutcome('Role "' + esc(targetRoleName) + '" imported successfully', true);
       else renderResult(res);
     } finally {
       await bg({ bg: "release" });
