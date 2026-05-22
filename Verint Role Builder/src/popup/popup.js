@@ -375,6 +375,8 @@
       o.textContent = name;
       sel.appendChild(o);
     });
+    // Pre-select the role highlighted in the Roles Setup grid, if any.
+    if (res.selected && res.roles.includes(res.selected)) sel.value = res.selected;
     show("modeStep", false);
     show("exportStep", true);
   }

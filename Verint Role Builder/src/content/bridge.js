@@ -108,6 +108,16 @@
     return [...out].sort((a, b) => a.localeCompare(b));
   }
 
+  // The role highlighted in the right-pane grid, if any. Selected rows carry
+  // class "tblRowSelect" (exactly one); the org tree's aria-selected is a
+  // separate concern in the left pane.
+  function selectedGridRole() {
+    const R = rightDoc();
+    if (!R) return null;
+    const tr = R.querySelector("tr[itemname].tblRowSelect");
+    return tr ? tr.getAttribute("itemname") : null;
+  }
+
   function rowInfo(tr) {
     const td = [...tr.querySelectorAll("td")].map((x) => x.textContent.trim());
     return {
@@ -171,7 +181,7 @@
 
   async function listRoles() {
     if (!isRolesSetup()) return { error: "not_on_roles_setup" };
-    return { roles: gridRoles() };
+    return { roles: gridRoles(), selected: selectedGridRole() };
   }
 
   // Read-only counterpart to apply(): opens the editor for one role, reads
