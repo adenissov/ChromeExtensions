@@ -74,6 +74,6 @@ input[type="text"] { width: 100%; padding: 6px; margin-top: 4px; font: inherit; 
 #outcomeStep { text-align: center; }
 #outcomeMsg { margin: 0 0 12px; }
 #exportResultStep { text-align: center; }
-#exportResultMsg { margin: 0 0 12px; }
+#exportResultMsg { margin: 0 0 12px; color: #1a7f37; }
 #outcomeMsg.ok { color: #1a7f37; }
 #outcomeMsg.err { color: #b42318; }

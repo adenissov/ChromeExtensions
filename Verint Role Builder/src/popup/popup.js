@@ -66,9 +66,12 @@
   const bg = (msg) => chrome.runtime.sendMessage(msg);
 
   // in-popup Yes/No, resolves boolean
-  function ask(message) {
+  function ask(message, html = false) {
     return new Promise((resolve) => {
-      $("confirmMsg").textContent = message;
+      const m = $("confirmMsg");
+      m.style.fontWeight = html ? "normal" : "";
+      if (html) m.innerHTML = message;
+      else m.textContent = message;
       show("confirm", true);
       const done = (v) => {
         show("confirm", false);
@@ -125,9 +128,10 @@
   // step. Used by exportCancel, the outcome OK button, and after a successful
   // export.
   function backToMode() {
-    ["uploadStep", "exportStep", "report", "status", "exportPrompt", "outcomeStep", "exportResultStep"].forEach((i) =>
+    ["uploadStep", "exportStep", "report", "status", "exportPrompt", "pickStep", "confirm", "outcomeStep", "exportResultStep"].forEach((i) =>
       show(i, false)
     );
+    $("file").value = "";
     show("modeStep", true);
   }
 
@@ -282,6 +286,7 @@
       return;
     }
     show("pickStep", false);
+    show("uploadStep", false); // owner-org confirm takes the upload hint's spot
 
     const ctx = await sendTab({ type: VRB.MSG.GET_CONTEXT, roleName: targetRoleName });
     if (ctx.error === "no_org_selected") {
@@ -293,13 +298,13 @@
       return;
     }
 
-    if (!(await ask(`Owner organization is "${ctx.ownerOrg}". Continue?`)))
-      return reset();
+    if (!(await ask(`Owner organization is "<b>${esc(ctx.ownerOrg)}</b>". Continue?`, true)))
+      return backToMode();
 
     let mode;
     if (ctx.exists) {
-      if (!(await ask(`Overwrite role "${targetRoleName}" under "${ctx.ownerOrg}"?`)))
-        return reset();
+      if (!(await ask(`Overwrite role "<b>${esc(targetRoleName)}</b>" under "<b>${esc(ctx.ownerOrg)}</b>"?`, true)))
+        return backToMode();
       if (ctx.isDefault || ctx.isAdmin) {
         const kind = [ctx.isDefault && "Default", ctx.isAdmin && "Admin"]
           .filter(Boolean)
@@ -309,7 +314,7 @@
             `⚠ "${targetRoleName}" is a ${kind} role (high blast radius — affects every assigned user). Overwrite anyway?`
           ))
         )
-          return reset();
+          return backToMode();
       }
       mode = "edit";
     } else {
@@ -497,7 +502,7 @@
   $("role").addEventListener("change", onRoleChange);
   $("targetName").addEventListener("input", onTargetInput);
   $("continueBtn").addEventListener("click", onContinue);
-  $("cancelBtn").addEventListener("click", reset);
+  $("cancelBtn").addEventListener("click", backToMode);
   $("outcomeOkBtn").addEventListener("click", backToMode);
   $("exportResultOkBtn").addEventListener("click", backToMode);
   loadMaster();
