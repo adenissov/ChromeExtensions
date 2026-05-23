@@ -18,9 +18,12 @@ let applyInFlight = false;
 // a fallback, by the saved file's basename.
 const INFLIGHT_KEY = "vrbExportInFlight"; // { roleName, filename, id, ts }
 
-// Badge colors (named for readability; mirror the popup's success/error hues).
-const BADGE_DONE_COLOR = "#1a7f37"; // success green
-const BADGE_FAIL_COLOR = "#b42318"; // error red
+// Badge colors. A service worker has no DOM, so it can't read popup.css's
+// custom properties — these mirror its --green / --red palette by name.
+const GREEN = "#1a7f37";
+const RED = "#b42318";
+const BADGE_DONE_COLOR = GREEN; // export complete
+const BADGE_FAIL_COLOR = RED; // export interrupted
 
 const baseName = (p) => String(p || "").split(/[\\/]/).pop();
 

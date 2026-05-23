@@ -1,14 +1,27 @@
 :root {
-  --text: #1f2328;          /* body / default text */
-  --text-secondary: #444;   /* hints, optional labels */
-  --text-muted: #666;       /* close icon */
-  --text-strong: #000;      /* emphasis / hover */
-  --surface: #fff;          /* button text on color, ghost background */
-  --primary: #1f6feb;       /* primary blue: buttons, links */
-  --border: #d0d7de;        /* report/status frame */
-  --success: #1a7f37;       /* green: success messages */
-  --error: #b42318;         /* red: error messages */
-  --warn: #9a6700;          /* amber: warnings */
+  /* Palette — the only place a literal color appears, each named by hue. */
+  --black: #000;
+  --white: #fff;
+  --ink: #1f2328;       /* near-black blue-gray */
+  --gray-dark: #444;
+  --gray: #666;
+  --gray-light: #d0d7de;
+  --blue: #1f6feb;
+  --green: #1a7f37;
+  --red: #b42318;
+  --amber: #9a6700;
+
+  /* Semantic roles — reference the palette by name, never a raw value. */
+  --text: var(--ink);            /* body / default text */
+  --text-secondary: var(--gray-dark); /* hints, optional labels */
+  --text-muted: var(--gray);     /* close icon */
+  --text-strong: var(--black);   /* emphasis / hover */
+  --surface: var(--white);       /* button text on color, ghost background */
+  --primary: var(--blue);        /* primary blue: buttons, links */
+  --border: var(--gray-light);   /* report/status frame */
+  --success: var(--green);       /* success messages */
+  --error: var(--red);           /* error messages */
+  --warn: var(--amber);          /* warnings */
 }
 * { box-sizing: border-box; }
 body {
