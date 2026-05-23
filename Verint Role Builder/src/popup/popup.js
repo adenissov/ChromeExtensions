@@ -103,26 +103,55 @@
     show("outcomeStep", true);
   }
 
-  function showExportResult(roleName, filePath) {
+  // Stored export results older than this are ignored on open, so a result the
+  // user never saw (openPopup failed) can't hijack an unrelated later open.
+  const EXPORT_RESULT_TTL_MS = 2 * 60 * 1000;
+
+  function showExportResult(r) {
     ["report", "pickStep", "confirm", "status", "exportStep", "exportPrompt",
      "modeStep", "uploadStep", "outcomeStep"].forEach((i) => show(i, false));
-    $("exportResultMsg").textContent =
-      'Role "' + roleName + '" exported to ' + filePath + ".";
+    const m = $("exportResultMsg");
+    if (r.status === "interrupted") {
+      m.className = "err";
+      m.textContent =
+        'Export of "' + r.roleName + '" did not complete — the download was interrupted.';
+    } else {
+      m.className = "ok";
+      m.textContent = 'Role "' + r.roleName + '" exported to ' + r.filePath + ".";
+    }
     show("exportResultStep", true);
   }
 
+  const clearBadge = () =>
+    chrome.action && chrome.action.setBadgeText
+      ? chrome.action.setBadgeText({ text: "" }).catch(() => {})
+      : undefined;
+
   // On popup open, check whether the SW stored an export result while the popup
-  // was closed (focus-steal teardown during Save-As). If so, show it instead
-  // of the start page.
+  // was closed (focus-steal teardown during Save-As). If so — and it's fresh —
+  // show it instead of the start page. Always clear the toolbar badge.
   async function checkExportResult() {
     try {
+      clearBadge();
       const data = await chrome.storage.session.get("vrbExportResult");
-      if (data.vrbExportResult) {
-        await chrome.storage.session.remove("vrbExportResult");
-        showExportResult(data.vrbExportResult.roleName, data.vrbExportResult.filePath);
-      }
+      const r = data.vrbExportResult;
+      if (!r) return;
+      await chrome.storage.session.remove("vrbExportResult");
+      if (Date.now() - (r.ts || 0) <= EXPORT_RESULT_TTL_MS) showExportResult(r);
     } catch (_) {}
   }
+
+  // If the popup happens to survive the Save-As teardown, the SW stores the
+  // result while we're still open; reflect it live instead of sitting on the
+  // "Exporting…" prompt forever.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "session" || !changes.vrbExportResult) return;
+    const r = changes.vrbExportResult.newValue;
+    if (!r) return;
+    chrome.storage.session.remove("vrbExportResult").catch(() => {});
+    clearBadge();
+    showExportResult(r);
+  });
 
   // Back to the mode-select screen from either the upload step or the export
   // step. Used by exportCancel, the outcome OK button, and after a successful
@@ -460,6 +489,8 @@
       // Popup will be torn down by the Save-As focus-steal; the SW detects
       // completion via downloads.onChanged, stores the result, and calls
       // openPopup() so the result dialog appears on the next open.
+    } else if (out && out.canceled) {
+      backToMode(); // user dismissed the Save-As dialog — not an error
     } else {
       status(
         '<span class="err">Download failed: ' +

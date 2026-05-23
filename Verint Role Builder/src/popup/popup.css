@@ -1,10 +1,22 @@
+:root {
+  --text: #1f2328;          /* body / default text */
+  --text-secondary: #444;   /* hints, optional labels */
+  --text-muted: #666;       /* close icon */
+  --text-strong: #000;      /* emphasis / hover */
+  --surface: #fff;          /* button text on color, ghost background */
+  --primary: #1f6feb;       /* primary blue: buttons, links */
+  --border: #d0d7de;        /* report/status frame */
+  --success: #1a7f37;       /* green: success messages */
+  --error: #b42318;         /* red: error messages */
+  --warn: #9a6700;          /* amber: warnings */
+}
 * { box-sizing: border-box; }
 body {
   font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
   width: 380px;
   margin: 0;
   padding: 14px;
-  color: #1f2328;
+  color: var(--text);
   position: relative;
 }
 h1 { font-size: 15px; margin: 0 0 12px; text-align: center; }
@@ -14,7 +26,7 @@ h1 { font-size: 15px; margin: 0 0 12px; text-align: center; }
   font-size: 15px;
   font-weight: bold;
 }
-#exportPrompt { color: #000; font-weight: normal; text-align: center; }
+#exportPrompt { color: var(--text-strong); font-weight: normal; text-align: center; }
 section { margin-bottom: 12px; }
 .hidden { display: none; }
 .row { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }
@@ -27,39 +39,39 @@ section { margin-bottom: 12px; }
   padding: 0 5px;
   border: none;
   background: transparent;
-  color: #666;
+  color: var(--text-muted);
   font-size: 18px;
   line-height: 1.3;
   cursor: pointer;
 }
-.close-btn:hover { color: #000; }
+.close-btn:hover { color: var(--text-strong); }
 #uploadStep, #exportStep, #pickStep { text-align: center; }
-#uploadHint { margin: 0; color: #444; }
+#uploadHint { margin: 0; color: var(--text-secondary); }
 button {
   font: inherit;
   padding: 6px 14px;
-  border: 1px solid #1f6feb;
-  background: #1f6feb;
-  color: #fff;
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--surface);
   border-radius: 5px;
   cursor: pointer;
 }
-button.ghost { background: #fff; color: #1f6feb; }
+button.ghost { background: var(--surface); color: var(--primary); }
 button:disabled { opacity: 0.5; cursor: default; }
 .filebtn {
   display: inline-block;
   padding: 7px 14px;
-  border: 1px solid #1f6feb;
+  border: 1px solid var(--primary);
   border-radius: 5px;
-  color: #1f6feb;
+  color: var(--primary);
   cursor: pointer;
 }
-.opt { display: block; margin-top: 10px; color: #444; }
+.opt { display: block; margin-top: 10px; color: var(--text-secondary); }
 select { width: 100%; padding: 6px; margin-top: 4px; }
 input[type="text"] { width: 100%; padding: 6px; margin-top: 4px; font: inherit; }
 #targetNameErr { margin-top: 6px; text-align: center; }
 #report, #status {
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px;
   max-height: 260px;
@@ -67,13 +79,15 @@ input[type="text"] { width: 100%; padding: 6px; margin-top: 4px; font: inherit; 
   white-space: pre-wrap;
   text-align: center;
 }
-.err { color: #b42318; }
-.ok { color: #1a7f37; }
-.warn { color: #9a6700; }
+.err { color: var(--error); }
+.ok { color: var(--success); }
+.warn { color: var(--warn); }
 #confirm { text-align: center; }
 #outcomeStep { text-align: center; }
 #outcomeMsg { margin: 0 0 12px; }
 #exportResultStep { text-align: center; }
-#exportResultMsg { margin: 0 0 12px; color: #1a7f37; }
-#outcomeMsg.ok { color: #1a7f37; }
-#outcomeMsg.err { color: #b42318; }
+#exportResultMsg { margin: 0 0 12px; }
+#exportResultMsg.ok { color: var(--success); }
+#exportResultMsg.err { color: var(--error); }
+#outcomeMsg.ok { color: var(--success); }
+#outcomeMsg.err { color: var(--error); }
