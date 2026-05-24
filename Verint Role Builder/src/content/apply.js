@@ -225,6 +225,15 @@
       work.push({ kind: p.kind, sfid: p.sfid, want: p.want, el: s.el });
     }
 
+    // Verint couples Edit→View: a field's Edit can't be ON unless its View is
+    // ON, and its View can't be cleared while its Edit is still ON. So order the
+    // toggles to keep every intermediate step legal in a single pass —
+    // Views ON, then Edits ON, then Edits OFF, then Views OFF. Without this,
+    // clearing a field that had View+Edit set leaves "View still on" until a
+    // second pass (live-confirmed 2026-05-23).
+    const sfPhase = (w) => (w.want ? (w.kind === "view" ? 0 : 1) : w.kind === "edit" ? 2 : 3);
+    work.sort((a, b) => sfPhase(a) - sfPhase(b));
+
     let done = 0;
     for (const w of work) {
       if (w.el) setCheckbox(w.el, w.want);
