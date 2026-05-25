@@ -55,6 +55,7 @@ For a few well-known patterns, the extension appends a one-line hint:
 | `IBMS / 445` | "NO DATA FOUND for some values associated with" | Likely missing Ward number for this GeoID in the IBMS location DB |
 | `MAXIMO / 500` | "object has no attribute" | Check Integration Request for validation errors |
 | any | "can not find match externalRequestId for requestNumber" | Check Integration Request for validation errors |
+| `4xx` | "Either the Request Number or the Customer Request Number is null" | Check Integration Request for validation errors |
 | any | "No records in the Middleware log" — only when the list has a Created Date Time column and the SR is ≥ 1 hour old | Check Integration Request for validation errors |
 
 ## Two log locations — picked automatically

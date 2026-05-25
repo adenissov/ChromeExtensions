@@ -278,6 +278,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.responseBody.includes('can not find match externalRequestId for requestNumber')) {
         displayText += TIP_CHECK_INTEGRATION_REQUEST;
       }
+      if (pendingStatusCode !== null && pendingStatusCode >= 400 && pendingStatusCode < 500 &&
+          message.responseBody.includes('Either the Request Number or the Customer Request Number is null')) {
+        displayText += TIP_CHECK_INTEGRATION_REQUEST;
+      }
       updateSRDisplay(displayText);
     } else {
       console.log('[Middleware Log] Missing response body');
