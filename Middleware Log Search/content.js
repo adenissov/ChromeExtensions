@@ -8,6 +8,12 @@
 const SR_NUMBER_PATTERN = /^\d{8,9}$/;  // 8-9 digit numbers
 const ELEMENT_ID_ATTR = 'data-mwlog-id';
 
+// Mirrors the constant in background.js. Appended to a "No records" result when
+// the SR's Created Date Time is at least an hour old (see updateSRDisplay).
+const TIP_CHECK_INTEGRATION_REQUEST = ' ✅Tip:Check Integration Request for validation errors';
+const NO_RECORDS_MESSAGE = 'No records in the Middleware log';
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
 //=============================================================================
 // STATE MANAGEMENT
 //=============================================================================
@@ -79,8 +85,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Inject styles if not already done
       injectStyles();
 
+      let responseBody = message.responseBody;
+
+      // For a "No records" result, append the validation-error tip when this
+      // table has a Created Date Time column and the SR is at least an hour old.
+      if (responseBody === NO_RECORDS_MESSAGE) {
+        const srCell = link.closest('td');
+        const createdDate = srCell && parseCreatedDateTime(getCreatedDateTimeForRow(srCell));
+        if (createdDate && (Date.now() - createdDate.getTime()) >= ONE_HOUR_MS) {
+          responseBody += TIP_CHECK_INTEGRATION_REQUEST;
+        }
+      }
+
       // Check if this is a searching message (spinner only for "Searching", not "Waiting")
-      const isSearching = message.responseBody.includes('Searching');
+      const isSearching = responseBody.includes('Searching');
 
       if (isSearching) {
         // Build content with spinner before "Searching" or "Waiting"
@@ -92,9 +110,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         spinner.textContent = '⟳ ';
         link.appendChild(spinner);
 
-        link.appendChild(document.createTextNode(message.responseBody));
+        link.appendChild(document.createTextNode(responseBody));
       } else {
-        link.textContent = `${message.srNumber} - ${message.responseBody}`;
+        link.textContent = `${message.srNumber} - ${responseBody}`;
       }
 
       // Add class to the cell for CSS targeting
@@ -241,6 +259,62 @@ function collectAllSRNumbers(clickedElement) {
 //=============================================================================
 // HELPER FUNCTIONS
 //=============================================================================
+
+/**
+ * Find the "Created Date Time" cell text for the row containing srCell.
+ * Returns null if the table has no such column (or it can't be located),
+ * so callers can treat absence as "don't apply the tip".
+ * @param {HTMLElement} srCell - The <td> holding the SR link
+ * @returns {string|null}
+ */
+function getCreatedDateTimeForRow(srCell) {
+  const row = srCell.closest('tr');
+  const table = srCell.closest('table');
+  if (!row || !table) return null;
+
+  const headerRow = table.querySelector('thead tr') || table.querySelector('tr');
+  if (!headerRow) return null;
+
+  const norm = (s) => (s || '').replace(/[\s ]+/g, ' ').trim().toLowerCase();
+  const headerCells = Array.from(headerRow.querySelectorAll('th, td'));
+  const createdHeaderIdx = headerCells.findIndex(c => norm(c.textContent).startsWith('created date time'));
+  if (createdHeaderIdx === -1) return null;  // no Created Date Time column in this table
+
+  const bodyCells = Array.from(row.querySelectorAll('td'));
+  const srBodyIdx = bodyCells.indexOf(srCell);
+  if (srBodyIdx === -1) return null;
+
+  // Header rows can carry leading cells (e.g. a selection column) that the body
+  // renders differently, so anchor on the Request Number column we already know
+  // to translate the header index into a body <td> index.
+  const requestHeaderIdx = headerCells.findIndex(c => norm(c.textContent).startsWith('request number'));
+  const createdBodyIdx = requestHeaderIdx !== -1
+    ? srBodyIdx + (createdHeaderIdx - requestHeaderIdx)
+    : createdHeaderIdx;
+
+  const cell = bodyCells[createdBodyIdx];
+  return cell ? cell.textContent : null;
+}
+
+/**
+ * Parse a Salesforce en-CA Created Date Time value, e.g. "2026-05-24, 2:30 p.m.".
+ * @param {string} text
+ * @returns {Date|null} - null if the text doesn't match the expected shape
+ */
+function parseCreatedDateTime(text) {
+  if (!text) return null;
+  const norm = text.replace(/[\s ]+/g, ' ').trim();
+  const m = norm.match(/(\d{4})-(\d{1,2})-(\d{1,2}),?\s+(\d{1,2}):(\d{2})\s*([ap])\.?m\.?/i);
+  if (!m) return null;
+
+  let hour = parseInt(m[4], 10);
+  const isPM = /p/i.test(m[6]);
+  if (isPM && hour !== 12) hour += 12;
+  if (!isPM && hour === 12) hour = 0;
+
+  const dt = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10), hour, parseInt(m[5], 10));
+  return isNaN(dt.getTime()) ? null : dt;
+}
 
 /**
  * Trigger Salesforce table reflow after content update.
