@@ -26,10 +26,10 @@ You stay on Salesforce. The extension does the navigating, scrolling, and readin
 - Choose **"Search this SR in Middleware Log"**
 - Wait a few seconds; the result replaces the SR-cell text
 
-### Batch search a whole column
-- Right-click anywhere in the SR (Request Number) column
-- Choose **"Search All SRs in Middleware Log"**
-- The extension processes the SRs one at a time, bottom to top
+### Batch search from a row upward
+- Right-click an SR in the SR (Request Number) column
+- Choose **"Search SRs From Here Up in Middleware Log"**
+- The extension searches the right-clicked SR and every SR above it (rows below it are skipped), one at a time, bottom to top
 - Each cell updates as its own result comes back
 
 You can keep working on Salesforce while batch mode runs in the background.

@@ -161,7 +161,8 @@ function extractSRNumber(element) {
 //=============================================================================
 
 /**
- * Collect all valid SR numbers from the Request Number column
+ * Collect valid SR numbers from the Request Number column, starting at the
+ * clicked row and going up to the top — SRs below the clicked row are skipped.
  * @param {HTMLElement} clickedElement - The element that was right-clicked
  * @returns {Array} - Array of {srNumber, elementId} objects, bottom-to-top order
  */
@@ -201,9 +202,14 @@ function collectAllSRNumbers(clickedElement) {
   }
   console.log('[Middleware Log] Found', allRows.length, 'data rows');
 
-  // Process bottom-to-top
+  // Start at the clicked row and go up; rows below it are skipped.
+  // Fall back to the last row if the clicked row isn't a data row.
+  const clickedRowIndex = allRows.indexOf(row);
+  const startIndex = clickedRowIndex === -1 ? allRows.length - 1 : clickedRowIndex;
+
+  // Process from the clicked row up to the top of the column
   const items = [];
-  for (let i = allRows.length - 1; i >= 0; i--) {
+  for (let i = startIndex; i >= 0; i--) {
     const rowCells = allRows[i].querySelectorAll('td');
     const targetCell = rowCells[columnIndex];
     if (!targetCell) continue;
