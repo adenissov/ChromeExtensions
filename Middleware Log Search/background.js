@@ -1,6 +1,9 @@
 // Middleware Log Search - Background Service Worker
 // Creates context menu and handles menu clicks to open Kibana dashboard
 
+// EXPERIMENT (branch experiment/osd-api-query): direct OSD search API probe.
+importScripts('osd-api.js');
+
 //=============================================================================
 // CONSTANTS
 //=============================================================================
@@ -58,6 +61,39 @@ let pendingAllItems = [];
  */
 function formatStatusPrefix(backendValue, statusCode) {
   return '(Backend=' + backendValue + ', Status=' + statusCode + ') ';
+}
+
+/**
+ * Build the full error-cell text: status prefix + response body + any hint tips.
+ * Shared by the single-SR trace flow and the batch API flow so both render
+ * identically. statusCode null/undefined omits the prefix.
+ */
+function formatErrorDisplay(statusCode, backendValue, responseBody) {
+  const hasStatus = statusCode !== null && statusCode !== undefined;
+  let displayText = hasStatus
+    ? formatStatusPrefix(backendValue, statusCode) + responseBody
+    : responseBody;
+
+  if (statusCode === 445 && backendValue === 'IBMS' &&
+      responseBody.includes('Neither RequestNumber nor ExternalRequestID found')) {
+    displayText += TIP_CHECK_INTEGRATION_REQUEST;
+  }
+  if (statusCode === 445 && backendValue === 'IBMS' &&
+      responseBody.includes('NO DATA FOUND for some values associated with')) {
+    displayText += TIP_IBMS_LOCATION_DB;
+  }
+  if (statusCode === 500 && backendValue === 'MAXIMO' &&
+      responseBody.includes('object has no attribute')) {
+    displayText += TIP_CHECK_INTEGRATION_REQUEST;
+  }
+  if (responseBody.includes('can not find match externalRequestId for requestNumber')) {
+    displayText += TIP_CHECK_INTEGRATION_REQUEST;
+  }
+  if (hasStatus && statusCode >= 400 && statusCode < 500 &&
+      responseBody.includes('Either the Request Number or the Customer Request Number is null')) {
+    displayText += TIP_CHECK_INTEGRATION_REQUEST;
+  }
+  return displayText;
 }
 
 /**
@@ -228,7 +264,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         currentJaegerTabId = tab.id;
       } else if (activeSingleSR) {
         activeSingleSR.jaegerTabId = tab.id;
-        startSingleSRTraceTimeout();
+        // In API mode the cell is already populated; skip the timeout that would
+        // overwrite it with "timed out" and close the tabs left open for review.
+        if (!activeSingleSR.apiMode) startSingleSRTraceTimeout();
       }
     });
   }
@@ -259,30 +297,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.responseBody) {
-      let displayText = message.responseBody;
-      if (pendingStatusCode !== null) {
-        displayText = formatStatusPrefix(pendingBackendValue, pendingStatusCode) + message.responseBody;
-      }
-      if (pendingStatusCode === 445 && pendingBackendValue === 'IBMS' &&
-          message.responseBody.includes('Neither RequestNumber nor ExternalRequestID found')) {
-        displayText += TIP_CHECK_INTEGRATION_REQUEST;
-      }
-      if (pendingStatusCode === 445 && pendingBackendValue === 'IBMS' &&
-          message.responseBody.includes('NO DATA FOUND for some values associated with')) {
-        displayText += TIP_IBMS_LOCATION_DB;
-      }
-      if (pendingStatusCode === 500 && pendingBackendValue === 'MAXIMO' &&
-          message.responseBody.includes('object has no attribute')) {
-        displayText += TIP_CHECK_INTEGRATION_REQUEST;
-      }
-      if (message.responseBody.includes('can not find match externalRequestId for requestNumber')) {
-        displayText += TIP_CHECK_INTEGRATION_REQUEST;
-      }
-      if (pendingStatusCode !== null && pendingStatusCode >= 400 && pendingStatusCode < 500 &&
-          message.responseBody.includes('Either the Request Number or the Customer Request Number is null')) {
-        displayText += TIP_CHECK_INTEGRATION_REQUEST;
-      }
-      updateSRDisplay(displayText);
+      updateSRDisplay(formatErrorDisplay(pendingStatusCode, pendingBackendValue, message.responseBody));
     } else {
       console.log('[Middleware Log] Missing response body');
     }
@@ -369,6 +384,8 @@ function cancelQueue() {
   if (!isProcessingQueue) return;
 
   console.log('[Middleware Log] Cancelling Search All queue');
+
+  apiBatchId++;  // invalidate any running API batch loop
 
   if (currentKibanaTabId) cancelledTabIds.add(currentKibanaTabId);
   if (currentJaegerTabId) cancelledTabIds.add(currentJaegerTabId);
@@ -464,6 +481,85 @@ function processNextInQueue() {
 }
 
 //=============================================================================
+// QUEUE PROCESSING (SEARCH ALL — API MODE)
+//=============================================================================
+
+// Monotonic id so a cancelled/superseded batch loop stops at its next checkpoint.
+let apiBatchId = 0;
+
+/**
+ * Convert an osdLookupSR result into the SR-cell text, reusing the same
+ * formatting (and hint tips) as the tab-based single-SR flow.
+ */
+function apiResultToText(result) {
+  switch (result.kind) {
+    case 'success': {
+      const message = result.statusCode === 200
+        ? 'Sent request to back-end'
+        : 'Back-end Id received: ' + result.extReqId;
+      return formatStatusPrefix(result.backend, result.statusCode) + message;
+    }
+    case 'error':
+      return formatErrorDisplay(result.statusCode, result.backend, result.responseBody);
+    case 'fetchError':
+      return 'Middleware log search failed: ' + result.message;
+    case 'noRecords':
+    default:
+      return 'No records in the Middleware log';
+  }
+}
+
+/**
+ * Batch "Search All" via the OSD API: query each SR directly (no tabs, no
+ * throttled background rendering) and update its cell as the result returns.
+ * Single-SR search is unaffected — it still opens the dashboard tab.
+ */
+async function runApiBatch(items) {
+  const myId = ++apiBatchId;
+  isProcessingQueue = true;
+  searchQueue = items.slice();
+  currentSearchIndex = -1;
+
+  console.log('[Middleware Log] API batch started:', searchQueue.length, 'items');
+
+  for (let i = 0; i < searchQueue.length; i++) {
+    if (myId !== apiBatchId) return;  // cancelled or superseded
+    currentSearchIndex = i;
+    const item = searchQueue[i];
+
+    chrome.tabs.sendMessage(sourceTabId, {
+      action: 'updateSRDisplay',
+      elementId: item.elementId,
+      srNumber: item.srNumber,
+      responseBody: 'Searching in the Middleware log...'
+    }).catch(() => {});
+
+    let result;
+    try {
+      result = await osdLookupSR(item.srNumber);
+    } catch (e) {
+      console.log('[Middleware Log] API batch lookup failed for', item.srNumber, '-', e.message);
+      result = { kind: 'fetchError', message: e.message };
+    }
+    if (myId !== apiBatchId) return;  // cancelled while awaiting
+
+    chrome.tabs.sendMessage(sourceTabId, {
+      action: 'updateSRDisplay',
+      elementId: item.elementId,
+      srNumber: item.srNumber,
+      responseBody: apiResultToText(result)
+    }).catch(() => {});
+  }
+
+  if (myId === apiBatchId) {
+    console.log('[Middleware Log] API batch complete:', searchQueue.length, 'items');
+    isProcessingQueue = false;
+    searchQueue = [];
+    currentSearchIndex = -1;
+  }
+}
+
+//=============================================================================
 // MENU CLICK HANDLER
 //=============================================================================
 
@@ -476,26 +572,47 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       cancelSingleSR();
       cancelQueue();
 
+      const startedSrNumber = lastValidSRNumber;
+      const startedSourceTabId = sourceTabId;
+      const startedElementId = elementId;
+      // Staging SRs (> threshold) can be answered instantly via the OSD API.
+      // Legacy SRs have no API and stay entirely on the tab-scrape flow.
+      const useApi = parseInt(startedSrNumber, 10) > SR_THRESHOLD;
+
       // Construct the Kibana URL with the SR number
-      const kibanaUrl = getKibanaUrl(lastValidSRNumber);
+      const kibanaUrl = getKibanaUrl(startedSrNumber);
 
       // Immediately update Salesforce to show "Searching..." message
-      if (sourceTabId && elementId) {
-        chrome.tabs.sendMessage(sourceTabId, {
+      if (startedSourceTabId && startedElementId) {
+        chrome.tabs.sendMessage(startedSourceTabId, {
           action: 'updateSRDisplay',
-          elementId: elementId,
-          srNumber: lastValidSRNumber,
+          elementId: startedElementId,
+          srNumber: startedSrNumber,
           responseBody: 'Searching in the Middleware log...'
         }).catch(error => {
           console.log('[Middleware Log] Failed to send searching message:', error.message);
         });
       }
 
-      // Open in new background tab (keep Salesforce tab on top) and remember
-      // its context so a subsequent click can cancel it cleanly.
-      const startedSrNumber = lastValidSRNumber;
-      const startedSourceTabId = sourceTabId;
-      const startedElementId = elementId;
+      // Fast path: populate the cell from the API while the dashboard tab loads.
+      if (useApi && startedSourceTabId && startedElementId) {
+        osdLookupSR(startedSrNumber).then((result) => {
+          chrome.tabs.sendMessage(startedSourceTabId, {
+            action: 'updateSRDisplay',
+            elementId: startedElementId,
+            srNumber: startedSrNumber,
+            responseBody: apiResultToText(result)
+          }).catch(() => {});
+        }).catch((e) => {
+          console.log('[Middleware Log] Single-SR API lookup failed:', e.message);
+        });
+      }
+
+      // Open the dashboard in a background tab (kept open for a close look; for
+      // errors it also opens the trace/defect page). Remember its context so a
+      // subsequent click can cancel it cleanly. In API mode the trace flow must
+      // not overwrite the API text or auto-close the tab, so its timeout is
+      // skipped (see openInBackground handler).
       chrome.tabs.create({ url: kibanaUrl, active: false }, (tab) => {
         activeSingleSR = {
           srNumber: startedSrNumber,
@@ -503,10 +620,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
           elementId: startedElementId,
           kibanaTabId: tab.id,
           jaegerTabId: null,
-          traceTimeoutId: null
+          traceTimeoutId: null,
+          apiMode: useApi
         };
       });
-      console.log('[Middleware Log] Opening Kibana URL for SR:', lastValidSRNumber);
+      console.log('[Middleware Log] Opening Kibana URL for SR:', startedSrNumber, useApi ? '(API fast-path)' : '(legacy)');
     } else {
       console.log('[Middleware Log] No SR number available');
     }
@@ -522,12 +640,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     cancelSingleSR();
     cancelQueue();
 
-    // Initialize queue
-    searchQueue = [...pendingAllItems];
-    currentSearchIndex = -1;
-    isProcessingQueue = true;
-
-    console.log('[Middleware Log] Starting Search All with', searchQueue.length, 'items');
-    processNextInQueue();
+    // Batch runs through the OSD API directly (runApiBatch sets queue state).
+    runApiBatch([...pendingAllItems]);
   }
 });

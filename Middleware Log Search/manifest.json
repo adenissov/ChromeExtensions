@@ -1,7 +1,7 @@
 {
   "name": "SR  Search in Middleware Log",
   "description": "Right-click on Service Request number to search middleware logs in Kibana",
-  "version": "1.6",
+  "version": "1.7",
   "manifest_version": 3,
   "background": {
     "service_worker": "background.js"

@@ -21,6 +21,14 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 let lastSRNumber = null;
 let elementIdCounter = 0;
 
+// Salesforce Lightning virtualizes list rows: a row scrolled out of view is
+// recycled/re-rendered, wiping the text we injected (and its data-mwlog-id).
+// Keep the last result per SR number and re-apply it whenever rows re-render.
+const resultsBySR = new Map();  // srNumber -> { srNumber, responseBody, isSearching }
+let reapplyObserver = null;
+let reapplyTimer = null;
+const REAPPLY_QUIET_MS = 200;  // wait for the DOM to settle, so we don't fight Salesforce mid-render
+
 //=============================================================================
 // MESSAGE LISTENER FOR SR DISPLAY UPDATES
 //=============================================================================
@@ -79,66 +87,118 @@ function injectStyles() {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'updateSRDisplay') {
     const element = document.querySelector(`[${ELEMENT_ID_ATTR}="${message.elementId}"]`);
-    if (element) {
-      const link = element.closest('a') || element;
+    const link = element ? (element.closest('a') || element) : null;
 
-      // Inject styles if not already done
-      injectStyles();
+    let responseBody = message.responseBody;
 
-      let responseBody = message.responseBody;
-
-      // For a "No records" result, append the validation-error tip when this
-      // table has a Created Date Time column and the SR is at least an hour old.
-      if (responseBody === NO_RECORDS_MESSAGE) {
-        const srCell = link.closest('td');
-        const createdDate = srCell && parseCreatedDateTime(getCreatedDateTimeForRow(srCell));
-        if (createdDate && (Date.now() - createdDate.getTime()) >= ONE_HOUR_MS) {
-          responseBody += TIP_CHECK_INTEGRATION_REQUEST;
-        }
+    // For a "No records" result, append the validation-error tip when this
+    // table has a Created Date Time column and the SR is at least an hour old.
+    if (responseBody === NO_RECORDS_MESSAGE && link) {
+      const srCell = link.closest('td');
+      const createdDate = srCell && parseCreatedDateTime(getCreatedDateTimeForRow(srCell));
+      if (createdDate && (Date.now() - createdDate.getTime()) >= ONE_HOUR_MS) {
+        responseBody += TIP_CHECK_INTEGRATION_REQUEST;
       }
+    }
 
-      // Check if this is a searching message (spinner only for "Searching", not "Waiting")
-      const isSearching = responseBody.includes('Searching');
+    const isSearching = responseBody.includes('Searching');
 
-      if (isSearching) {
-        // Build content with spinner before "Searching" or "Waiting"
-        link.innerHTML = '';
-        link.appendChild(document.createTextNode(`${message.srNumber} - `));
+    // Remember the result so it survives Lightning recycling the row's DOM.
+    resultsBySR.set(message.srNumber, { srNumber: message.srNumber, responseBody, isSearching });
+    ensureReapplyObserver();
 
-        const spinner = document.createElement('span');
-        spinner.className = 'mwlog-spinner';
-        spinner.textContent = '⟳ ';
-        link.appendChild(spinner);
-
-        link.appendChild(document.createTextNode(responseBody));
-      } else {
-        link.textContent = `${message.srNumber} - ${responseBody}`;
-      }
-
-      // Add class to the cell for CSS targeting
-      const cell = link.closest('td');
-      if (cell) {
-        cell.classList.add('mwlog-expanded-cell');
-
-        // Also add class to parent row
-        const row = cell.closest('tr');
-        if (row) {
-          row.classList.add('mwlog-expanded-row');
-        }
-
-        // Trigger table reflow to fix Salesforce layout issues
-        const table = cell.closest('table');
-        if (table) {
-          triggerSalesforceTableReflow(table);
-        }
-      }
-
+    if (link) {
+      applyDisplay(link, message.srNumber, responseBody, isSearching, true);
       console.log('[Middleware Log] SR display updated:', link.textContent);
     } else {
-      console.log('[Middleware Log] Could not find element to update:', message.elementId);
+      // Row is offscreen/recycled now; the observer will paint it when it returns.
+      console.log('[Middleware Log] Element not visible, stored for re-apply:', message.srNumber);
     }
   }
 });
+
+/**
+ * Write the result text into an SR link and grow its cell/row/table.
+ * @param {HTMLElement} link - The <a> holding the SR number
+ * @param {string} srNumber
+ * @param {string} responseBody - Final display text (tip already appended)
+ * @param {boolean} isSearching - Show the spinner while a search is in flight
+ * @param {boolean} triggerReflow - Dispatch the resize reflow (only on first paint;
+ *   skip on re-paints, since the resize event itself nudges Salesforce to re-render)
+ */
+function applyDisplay(link, srNumber, responseBody, isSearching, triggerReflow) {
+  injectStyles();
+
+  if (isSearching) {
+    link.innerHTML = '';
+    link.appendChild(document.createTextNode(`${srNumber} - `));
+
+    const spinner = document.createElement('span');
+    spinner.className = 'mwlog-spinner';
+    spinner.textContent = '⟳ ';
+    link.appendChild(spinner);
+
+    link.appendChild(document.createTextNode(responseBody));
+  } else {
+    link.textContent = `${srNumber} - ${responseBody}`;
+  }
+
+  const cell = link.closest('td');
+  if (cell) {
+    cell.classList.add('mwlog-expanded-cell');
+    const row = cell.closest('tr');
+    if (row) row.classList.add('mwlog-expanded-row');
+    const table = cell.closest('table');
+    if (table && triggerReflow) triggerSalesforceTableReflow(table);
+  }
+}
+
+/** Text applyDisplay produces, used to skip links that are already painted. */
+function expectedDisplayText(srNumber, responseBody, isSearching) {
+  return isSearching ? `${srNumber} - ⟳ ${responseBody}` : `${srNumber} - ${responseBody}`;
+}
+
+/**
+ * Re-paint any on-screen SR link whose stored result was wiped by a re-render.
+ * Cheap because it only runs when the DOM mutates (debounced to one scan/frame)
+ * and writes only when a link's text differs from its stored result.
+ */
+function reapplyStoredResults() {
+  if (resultsBySR.size === 0) return;
+
+  const links = document.querySelectorAll('table a');
+  for (const link of links) {
+    const text = link.textContent.trim();
+    const spaceIndex = text.indexOf(' ');
+    const token = spaceIndex !== -1 ? text.substring(0, spaceIndex) : text;
+
+    const stored = resultsBySR.get(token);
+    if (!stored) continue;
+
+    if (link.textContent === expectedDisplayText(stored.srNumber, stored.responseBody, stored.isSearching)) {
+      continue;  // already painted; skip to avoid a mutation loop
+    }
+    applyDisplay(link, stored.srNumber, stored.responseBody, stored.isSearching, false);
+  }
+}
+
+// Re-paint only after the DOM has been quiet for REAPPLY_QUIET_MS. A trailing
+// debounce (not per-frame) keeps us from fighting Salesforce while it re-renders
+// rows during a scroll, which otherwise flickers.
+function scheduleReapply() {
+  if (reapplyTimer) clearTimeout(reapplyTimer);
+  reapplyTimer = setTimeout(() => {
+    reapplyTimer = null;
+    reapplyStoredResults();
+  }, REAPPLY_QUIET_MS);
+}
+
+/** Start watching for re-renders once there's at least one result to preserve. */
+function ensureReapplyObserver() {
+  if (reapplyObserver) return;
+  reapplyObserver = new MutationObserver(scheduleReapply);
+  reapplyObserver.observe(document.body, { childList: true, subtree: true });
+}
 
 //=============================================================================
 // SR NUMBER EXTRACTION
