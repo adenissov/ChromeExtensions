@@ -9,8 +9,9 @@ This document explains *why* the extension is structured the way it is. For user
 | File | Runs on | Purpose |
 |---|---|---|
 | `manifest.json` | — | MV3 manifest, host permissions, content-script matchers |
-| `background.js` | Service worker | Context menu, tab orchestration, queue, message routing |
-| `content.js` | Salesforce (`*.salesforce.com`, `*.force.com`, `*.lightning.force.com`) | SR validation on right-click, in-place display update, table reflow |
+| `background.js` | Service worker | Context menu, tab orchestration, queue, API/tab mode routing, message routing |
+| `osd-api.js` | Service worker (`importScripts`) | Query the staging OSD search API directly; replicate the table/trace result logic server-side |
+| `content.js` | Salesforce (`*.salesforce.com`, `*.force.com`, `*.lightning.force.com`) | SR validation on right-click, in-place display update + persistence across row re-render, table reflow |
 | `error-trace-click.js` | Kibana (`portal.cc.toronto.ca`) and OSD staging (`staging.cc.toronto.ca`), restricted to ports `5601` and `15601` | Find the most-recent error row, click its Trace link |
 | `jaeger-expand.js` | All URLs (filtered internally) | Extract error message from the trace page; auto-scroll |
 
@@ -109,7 +110,9 @@ Polling on a fixed interval would either be slow (long interval) or wasteful (sh
 
 **Single-SR mode has *no* per-item timeout** — opening the tab and waiting for whatever comes back. There's no queue advancing behind it, so a slow load just means a longer wait.
 
-Batch mode needs the timeout because each item must yield to the next.
+Batch mode (legacy tab flow) needs the timeout because each item must yield to the next.
+
+**API mode (§13) has no tab timeout at all.** A staging single-SR still opens the dashboard tab for a closer look, but its result comes from the API, so the trace-scrape timeout is *deliberately skipped* (`apiMode` flag) — otherwise it would overwrite the API text with "timed out" and close the tab. The API `fetch` has its own implicit network timeout.
 
 ---
 
@@ -163,12 +166,59 @@ The background script in MV3 is a non-persistent service worker. In-memory state
 
 If batch reliability ever becomes a problem, the next step is persisting queue state to `chrome.storage.session`.
 
+API-mode batch (§13) is a single `async` function awaiting sequential `fetch`es; the in-flight `await` keeps the worker alive, and a generation token (`apiBatchId`) cancels it if a new search starts.
+
 ---
 
 ## 12. Known limitations
 
 - **Threshold-based routing** assumes a sharp cutoff. If logs are ever dual-written across both stacks during a transition window, an SR could exist on either side; the extension only checks one.
 - **Auto-scroll** is implemented for the new ByteStream layout only. The Jaeger UI has its own existing accordion-expand behavior in the same file.
-- **"Jaeger extraction timed out"** can still happen on very slow staging loads (>30 s). Re-running the SR typically succeeds.
+- **"Jaeger extraction timed out"** can still happen on very slow legacy single-SR loads (>30 s). Re-running the SR typically succeeds. Staging SRs use the API (§13) and don't hit this.
 - **`findErrorMessageDeep`** returns the first match in DFS order. Backends with multiple errors only get the first one reported.
 - **Service-worker restart** during single-SR mode produces a "message port closed" warning in the Salesforce console; this is informational, not an error.
+- **API batch mode (§13) is staging-only and not threshold-gated.** It runs *every* SR through the staging API. This is safe today because legacy SRs (≤ threshold) never appear in a batch — they predate the dashboard. If a legacy SR ever ended up in a batch, it would wrongly come back "No records" instead of falling back to the legacy tab flow.
+
+---
+
+## 13. Direct OSD API query (staging fast-path)
+
+The staging dashboard is a heavy SPA. Opening it in a *background* tab is slow because Chrome throttles background tabs (timer clamping, suspended `requestAnimationFrame`/painting), so the table can take many seconds to render before `error-trace-click.js` can scrape it. Switching focus to the tab speeds it up — which is exactly the symptom that motivated this path.
+
+Instead, `osd-api.js` calls the dashboard's own internal search endpoint directly from the service worker:
+
+```js
+fetch('https://staging.cc.toronto.ca:15601/internal/search/opensearch', {
+  method: 'POST', credentials: 'include',         // reuse the logged-in session cookie
+  headers: { 'osd-xsrf': 'osd-fetch', 'osd-version': '2.19.0', ... },
+  body: JSON.stringify(buildSearchBody(srNumber, from, to))
+});
+```
+
+**Why this works without an API key:** the user is already logged into the dashboard, so the session cookie authenticates the request. `host_permissions: ["<all_urls>"]` lets the service worker send it cross-origin with credentials. No new permission, no key, no token handling.
+
+**Faithful replication, not a new query.** The request body (`buildSearchBody`) and the painless `script_fields` (Trace, HttpStatusCode, Backend, External/Request IDs) are copied **verbatim** from a real dashboard search captured in DevTools, so the API returns the exact column values the scraped table used to show. `osdLookupSR` then replicates `error-trace-click.js`'s row-selection logic against those rows (max status across rows; 200/202 → success; otherwise fetch the error row's trace and pull the `response.payload` error message via the same `findErrorMessageDeep` walker as `jaeger-expand.js`, §5).
+
+**Where it's used (`useApi = srNumber > SR_THRESHOLD`):**
+- **Batch** — fully API; no tabs opened. A single `runApiBatch` awaits each SR sequentially.
+- **Single SR** — API populates the cell instantly *and* the dashboard tab still opens (kept open for a closer look; errors also open the Trace page). The two are independent: the API write is the fast answer, the tab is for the human.
+- **Legacy SRs** — no API exists for the legacy stack; they stay entirely on the tab-scrape flow.
+
+**Trade-off / fragility:** the endpoint and body are undocumented and version-specific (`osd-version: 2.19.0`). An OSD upgrade can change either. The tab-scrape flow remains as the legacy path and the conceptual fallback. If the API shape breaks, the fix is to re-capture a search request and update `buildSearchBody`/`SCRIPT_FIELDS`.
+
+---
+
+## 14. Result persistence across Salesforce row re-render
+
+Salesforce Lightning **virtualizes list rows**: a row scrolled out of the viewport is recycled/re-rendered, which wipes any text we injected into its cell (and the `data-mwlog-id` marker). This was latent in the old tab-scrape flow — results trickled in seconds later, after the list had settled, so nothing overwrote them. The API fast-path made it visible: results land instantly, into a still-rendering list, and vanish on the next scroll.
+
+`content.js` fixes this independently of how the result was obtained:
+
+1. Every `updateSRDisplay` result is stored in a `Map` keyed by **SR number** (not by the fragile `data-mwlog-id`, which the recycle wipes).
+2. A `MutationObserver` watches `document.body` for re-renders. On a mutation it re-paints any on-screen SR link whose text doesn't match its stored result — identifying rows by the **leading SR token** in the link text, which is stable whether the node is fresh (`09396684`) or already painted (`09396684 - 200 OK`).
+
+**Two guards keep it from fighting Salesforce:**
+- The re-paint is debounced to fire only after the DOM has been **quiet for 200 ms** (`REAPPLY_QUIET_MS`), not per animation frame. Per-frame re-painting raced Salesforce's own row rendering at the bottom of long lists and flickered.
+- The `resize` reflow (§10) is dispatched **only on first paint**, not on re-paints — the resize event itself nudges Salesforce to re-render, which would re-trigger the observer.
+
+Together with the text-equality skip in the scan (don't rewrite a link that's already correct), the loop settles after one quiet re-paint.

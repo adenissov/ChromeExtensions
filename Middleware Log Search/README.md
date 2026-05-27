@@ -4,13 +4,14 @@ A Chrome extension that lets City of Toronto 311 staff look up middleware-log re
 
 ## What it does
 
-Right-click an SR number on a Salesforce list view and the extension will:
-1. Open the corresponding Kibana / OSD dashboard in a background tab
-2. Find the most recent error row in the middleware-log table
-3. Open the Trace link for that row
-4. Pull the error message out of the trace page and display it inline next to the SR number on Salesforce
+Right-click an SR number on a Salesforce list view and the extension looks up its middleware-log result and displays it inline next to the SR number. You stay on Salesforce.
 
-You stay on Salesforce. The extension does the navigating, scrolling, and reading for you.
+How it finds the result depends on which log the SR lives in:
+
+- **New staging dashboard (SR > 09227488)** — the extension queries the log's search API directly from the background, so the result appears almost instantly. For a single SR it *also* opens the dashboard tab (and, on an error, the Trace page) so you can take a closer look.
+- **Legacy Kibana (SR ≤ 09227488)** — the extension opens the dashboard in a background tab, finds the most recent error row, opens its Trace link, and reads the error message from the trace page.
+
+The result text survives scrolling — if you scroll a populated SR out of view and back, it stays filled in.
 
 ## Installation
 
@@ -24,13 +25,14 @@ You stay on Salesforce. The extension does the navigating, scrolling, and readin
 ### Search a single SR
 - Right-click an SR number link (8–9 digits) in any Salesforce list
 - Choose **"Search this SR in Middleware Log"**
-- Wait a few seconds; the result replaces the SR-cell text
+- The result replaces the SR-cell text — instantly for staging SRs, or after a few seconds for legacy SRs
+- The dashboard tab also opens in the background, and stays open, for a closer look (errors also open the Trace page)
 
 ### Batch search from a row upward
 - Right-click an SR in the SR (Request Number) column
 - Choose **"Search SRs From Here Up in Middleware Log"**
 - The extension searches the right-clicked SR and every SR above it (rows below it are skipped), one at a time, bottom to top
-- Each cell updates as its own result comes back
+- Each cell updates as its own result comes back — no dashboard tabs are opened; results come straight from the API
 
 You can keep working on Salesforce while batch mode runs in the background.
 
