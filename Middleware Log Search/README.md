@@ -28,10 +28,10 @@ The result text survives scrolling — if you scroll a populated SR out of view 
 - The result replaces the SR-cell text — instantly for staging SRs, or after a few seconds for legacy SRs
 - The dashboard tab also opens in the background, and stays open, for a closer look (errors also open the Trace page)
 
-### Batch search from a row upward
-- Right-click an SR in the SR (Request Number) column
-- Choose **"Search SRs From Here Up in Middleware Log"**
-- The extension searches the right-clicked SR and every SR above it (rows below it are skipped), one at a time, bottom to top
+### Batch search the whole column
+- Right-click any SR in the SR (Request Number) column
+- Choose **"Search All SRs in Middleware Log"**
+- The extension searches every SR in the column, one at a time, bottom to top — the row you right-clicked doesn't matter
 - Each cell updates as its own result comes back — no dashboard tabs are opened; results come straight from the API
 
 You can keep working on Salesforce while batch mode runs in the background.

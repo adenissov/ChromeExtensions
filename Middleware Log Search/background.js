@@ -197,7 +197,7 @@ chrome.runtime.onInstalled.addListener(() => {
     });
     chrome.contextMenus.create({
       id: 'middlewareLogSearchAll',
-      title: 'Search SRs From Here Up in Middleware Log',
+      title: 'Search All SRs in Middleware Log',
       contexts: ['all'],
       enabled: false  // Disabled by default until in Request Number column
     });
