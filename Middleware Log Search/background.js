@@ -13,7 +13,7 @@ const KIBANA_URL_TEMPLATE_STAGING = "https://staging.cc.toronto.ca:15601/app/das
 const SR_THRESHOLD = 9227488;
 
 const TIP_CHECK_INTEGRATION_REQUEST = ' ✅Tip:Check Integration Request for validation errors';
-const TIP_IBMS_LOCATION_DB = ' ✅Tip: Error in the IBMS location database (likely missing Ward number for this GeoID)';
+const TIP_IBMS_LOCATION_DB = ' ✅Tip: Error in the IBMS location database (likely missing Ward number for this GeoID). Open a ticket in Jira IBMS Intake';
 const TRACE_EXTRACTION_TIMEOUT_MS = 30000;
 
 //=============================================================================

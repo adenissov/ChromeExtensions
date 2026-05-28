@@ -54,7 +54,7 @@ For a few well-known patterns, the extension appends a one-line hint:
 | Backend / Status | Pattern in response | Tip appended |
 |---|---|---|
 | `IBMS / 445` | "Neither RequestNumber nor ExternalRequestID found" | Check Integration Request for validation errors |
-| `IBMS / 445` | "NO DATA FOUND for some values associated with" | Likely missing Ward number for this GeoID in the IBMS location DB |
+| `IBMS / 445` | "NO DATA FOUND for some values associated with" | Likely missing Ward number for this GeoID in the IBMS location DB. Open a ticket in Jira IBMS Intake |
 | `MAXIMO / 500` | "object has no attribute" | Check Integration Request for validation errors |
 | any | "can not find match externalRequestId for requestNumber" | Check Integration Request for validation errors |
 | `4xx` | "Either the Request Number or the Customer Request Number is null" | Check Integration Request for validation errors |
