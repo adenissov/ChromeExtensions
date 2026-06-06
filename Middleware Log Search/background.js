@@ -1,7 +1,7 @@
 // Middleware Log Search - Background Service Worker
-// Creates context menu and handles menu clicks to open Kibana dashboard
+// Creates the context menu and handles menu clicks: queries the OSD search API
+// for each SR (osd-api.js) and opens the dashboard tab for a closer look.
 
-// EXPERIMENT (branch experiment/osd-api-query): direct OSD search API probe.
 // row-classify.js first — osd-api.js calls classifyStatusRows from it.
 importScripts('row-classify.js', 'osd-api.js');
 
@@ -9,13 +9,12 @@ importScripts('row-classify.js', 'osd-api.js');
 // CONSTANTS
 //=============================================================================
 
-const KIBANA_URL_TEMPLATE = "http://portal.cc.toronto.ca:5601/app/dashboards#/view/c36f5e40-40fe-11ed-a166-53790178ef13?_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-30d,to:now))&_a=(query:(language:kuery,query:'NNNNNNNN'),filters:!(),viewMode:view)";
-const KIBANA_URL_TEMPLATE_STAGING = "https://staging.cc.toronto.ca:15601/app/dashboards#/view/2da28bb0-4309-11f1-be7c-49d712de5225?_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-30d,to:now))&_a=(query:(language:kuery,query:'span.attributes.http@request@header@requestnumber:%22NNNNNNNN%22'),filters:!(),viewMode:view)";
-const SR_THRESHOLD = 9227488;
+// Staging ByteStream O11Y dashboard. The legacy Kibana stack (portal.cc.toronto.ca:5601)
+// was retired — old SRs are no longer searched — so there is only one dashboard now.
+const DASHBOARD_URL_TEMPLATE = "https://staging.cc.toronto.ca:15601/app/dashboards#/view/2da28bb0-4309-11f1-be7c-49d712de5225?_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-30d,to:now))&_a=(query:(language:kuery,query:'span.attributes.http@request@header@requestnumber:%22NNNNNNNN%22'),filters:!(),viewMode:view)";
 
 const TIP_CHECK_INTEGRATION_REQUEST = ' ✅Tip:Check Integration Request for validation errors';
 const TIP_IBMS_LOCATION_DB = ' ✅Tip: Error in the IBMS location database (likely missing Ward number for this GeoID). Open a ticket in Jira IBMS Intake';
-const TRACE_EXTRACTION_TIMEOUT_MS = 30000;
 
 //=============================================================================
 // STATE
@@ -26,22 +25,20 @@ const TRACE_EXTRACTION_TIMEOUT_MS = 30000;
 // about what was under the cursor. Shape: { tabId, srNumber, elementId, allItems }.
 let lastRightClick = { tabId: null, srNumber: null, elementId: null, allItems: [] };
 
-// Queue processing state (for "Search All")
+// Batch ("Search All") state. The batch runs entirely through the OSD API
+// (runApiBatch) — no tabs are opened — so there is no per-tab tracking here.
 let searchQueue = [];
 let currentSearchIndex = -1;
 let isProcessingQueue = false;
 // Salesforce tab a running batch paints into (set when a batch starts).
 let batchSourceTabId = null;
 
-// Tab tracking for cleanup (queue mode only)
-let currentKibanaTabId = null;
-let currentJaegerTabId = null;
-
-// Tab IDs whose batch was cancelled — late messages from these tabs are ignored
+// Tab IDs (single-SR dashboard/trace tabs) whose search was cancelled — late
+// messages from these tabs are ignored.
 const cancelledTabIds = new Set();
 
 // In-progress single-SR search context. Null when no single-SR is running.
-// Shape: { srNumber, sourceTabId, elementId, kibanaTabId, jaegerTabId, traceTimeoutId }
+// Shape: { srNumber, sourceTabId, elementId, kibanaTabId, jaegerTabId, resultDelivered }
 let activeSingleSR = null;
 
 // Status code and backend value of the current error being traced (for prepending to Jaeger result)
@@ -96,27 +93,18 @@ function formatErrorDisplay(statusCode, backendValue, responseBody) {
 }
 
 /**
- * Clear pending Kibana state (status code and backend value)
+ * Build the dashboard URL for an SR (all SRs are on the staging dashboard now).
  */
-function getKibanaUrl(srNumber) {
-  return parseInt(srNumber, 10) > SR_THRESHOLD
-    ? KIBANA_URL_TEMPLATE_STAGING.replace('NNNNNNNN', srNumber)
-    : KIBANA_URL_TEMPLATE.replace('NNNNNNNN', srNumber);
-}
-
-function clearPendingState() {
-  pendingStatusCode = null;
-  pendingBackendValue = null;
+function getDashboardUrl(srNumber) {
+  return DASHBOARD_URL_TEMPLATE.replace('NNNNNNNN', srNumber);
 }
 
 /**
- * If processing a queue, clean up tabs and advance to next item
+ * Clear pending trace state (status code and backend value).
  */
-function advanceQueueIfProcessing() {
-  if (isProcessingQueue) {
-    cleanupCurrentTabs();
-    processNextInQueue();
-  }
+function clearPendingState() {
+  pendingStatusCode = null;
+  pendingBackendValue = null;
 }
 
 /**
@@ -158,11 +146,6 @@ function resolveReplyTarget(senderTabId) {
       (senderTabId === activeSingleSR.kibanaTabId || senderTabId === activeSingleSR.jaegerTabId)) {
     return { tabId: activeSingleSR.sourceTabId, elementId: activeSingleSR.elementId, srNumber: activeSingleSR.srNumber };
   }
-  if (isProcessingQueue &&
-      (senderTabId === currentKibanaTabId || senderTabId === currentJaegerTabId)) {
-    const item = searchQueue[currentSearchIndex];
-    if (item) return { tabId: batchSourceTabId, elementId: item.elementId, srNumber: item.srNumber };
-  }
   return null;
 }
 
@@ -178,39 +161,18 @@ function updateSRDisplay(senderTabId, responseBody) {
     console.log('[Middleware Log] Dropping reply - no active search owns tab', senderTabId);
     return;
   }
+  // API fast-path: once the API has painted the cell (resultDelivered), the
+  // dashboard tab is open only for the human to inspect. Its (slower, throttled)
+  // scrape must not overwrite the delivered answer — e.g. a sluggish dashboard
+  // render firing "No records" over a correct API error. If the API hasn't
+  // delivered yet (still pending, or it failed), resultDelivered is false and the
+  // tab scrape still paints, acting as the fallback it always was for legacy SRs.
+  if (activeSingleSR && activeSingleSR.resultDelivered &&
+      (senderTabId === activeSingleSR.kibanaTabId || senderTabId === activeSingleSR.jaegerTabId)) {
+    console.log('[Middleware Log] Dropping tab reply - API already delivered result for SR', activeSingleSR.srNumber);
+    return;
+  }
   paintCell(target.tabId, target.elementId, target.srNumber, responseBody);
-}
-
-function startSingleSRTraceTimeout() {
-  if (!activeSingleSR) return;
-
-  const timeoutContext = activeSingleSR;
-  clearTimeout(timeoutContext.traceTimeoutId);
-
-  timeoutContext.traceTimeoutId = setTimeout(() => {
-    if (activeSingleSR !== timeoutContext) return;
-
-    console.log('[Middleware Log] Single-SR trace extraction timed out for SR:', timeoutContext.srNumber);
-
-    let timeoutMessage = 'Jaeger extraction timed out';
-    if (pendingStatusCode !== null) {
-      timeoutMessage = formatStatusPrefix(pendingBackendValue, pendingStatusCode) + timeoutMessage;
-    }
-
-    paintCell(timeoutContext.sourceTabId, timeoutContext.elementId, timeoutContext.srNumber, timeoutMessage);
-
-    if (timeoutContext.jaegerTabId) {
-      cancelledTabIds.add(timeoutContext.jaegerTabId);
-      chrome.tabs.remove(timeoutContext.jaegerTabId).catch(() => {});
-    }
-    if (timeoutContext.kibanaTabId) {
-      cancelledTabIds.add(timeoutContext.kibanaTabId);
-      chrome.tabs.remove(timeoutContext.kibanaTabId).catch(() => {});
-    }
-
-    clearPendingState();
-    activeSingleSR = null;
-  }, TRACE_EXTRACTION_TIMEOUT_MS);
 }
 
 //=============================================================================
@@ -296,34 +258,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     pendingStatusCode = message.statusCode || null;
     pendingBackendValue = message.backendValue || '';
     chrome.tabs.create({ url: message.url, active: false }, (tab) => {
-      if (isProcessingQueue) {
-        currentJaegerTabId = tab.id;
-      } else if (activeSingleSR) {
+      // Track the trace tab so its reply can be routed and the tab cancelled.
+      // The cell is already populated by the API; this tab is for the human to
+      // inspect, so a delivered result is not overwritten (see updateSRDisplay).
+      if (activeSingleSR) {
         activeSingleSR.jaegerTabId = tab.id;
-        // In API mode the cell is already populated; skip the timeout that would
-        // overwrite it with "timed out" and close the tabs left open for review.
-        if (!activeSingleSR.apiMode) startSingleSRTraceTimeout();
       }
     });
   }
 
-  // Handle direct status result from Kibana (no Jaeger needed)
+  // Handle direct status result from the dashboard (no trace page needed)
   if (message.action === 'statusResult') {
     console.log('[Middleware Log] Status result:', message.statusCode, message.displayText);
     updateSRDisplay(sender.tab?.id, message.displayText);
     clearActiveSingleSRIfFromIt(sender.tab?.id);
-    advanceQueueIfProcessing();
   }
 
-  // Handle no records found in Kibana (empty table)
+  // Handle no records found in the dashboard (empty table)
   if (message.action === 'noRecordsFound') {
-    console.log('[Middleware Log] No records found in Kibana');
+    console.log('[Middleware Log] No records found in dashboard');
     updateSRDisplay(sender.tab?.id, 'No records in the Middleware log');
     clearActiveSingleSRIfFromIt(sender.tab?.id);
-    advanceQueueIfProcessing();
   }
 
-  // Handle response body extracted from Jaeger
+  // Handle response body extracted from the trace page
   if (message.action === 'responseBodyExtracted') {
     console.log('[Middleware Log] Received response body:', message.responseBody);
 
@@ -340,27 +298,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     clearPendingState();
     clearActiveSingleSRIfFromIt(sender.tab?.id);
-    advanceQueueIfProcessing();
   }
 });
 
 //=============================================================================
-// TAB CLEANUP (QUEUE MODE)
+// CANCELLATION
 //=============================================================================
-
-/**
- * Close current Kibana and Jaeger tabs (used in queue mode)
- */
-function cleanupCurrentTabs() {
-  if (currentJaegerTabId) {
-    chrome.tabs.remove(currentJaegerTabId).catch(() => {});
-    currentJaegerTabId = null;
-  }
-  if (currentKibanaTabId) {
-    chrome.tabs.remove(currentKibanaTabId).catch(() => {});
-    currentKibanaTabId = null;
-  }
-}
 
 /**
  * Cancel an in-progress single-SR search. Mirrors cancelQueue but for the
@@ -383,8 +326,6 @@ function cancelSingleSR() {
     paintCell(activeSingleSR.sourceTabId, activeSingleSR.elementId, activeSingleSR.srNumber, 'Search cancelled');
   }
 
-  clearTimeout(activeSingleSR.traceTimeoutId);
-
   if (activeSingleSR.jaegerTabId) {
     chrome.tabs.remove(activeSingleSR.jaegerTabId).catch(() => {});
   }
@@ -402,17 +343,15 @@ function cancelSingleSR() {
 function clearActiveSingleSRIfFromIt(senderTabId) {
   if (!activeSingleSR || !senderTabId) return;
   if (senderTabId === activeSingleSR.kibanaTabId || senderTabId === activeSingleSR.jaegerTabId) {
-    clearTimeout(activeSingleSR.traceTimeoutId);
     activeSingleSR = null;
   }
 }
 
 /**
  * Cancel an in-progress "Search All" batch. Called when the user clicks
- * either context-menu item while a batch is running. Marks the current
- * Kibana/Jaeger tabs so any in-flight messages from them are dropped,
- * shows "Search cancelled" on the in-progress item's cell, closes the
- * tabs, and resets queue state. Safe to call when no batch is running.
+ * either context-menu item while a batch is running. Invalidates the running
+ * API batch loop (apiBatchId), shows "Search cancelled" on the in-progress
+ * item's cell, and resets batch state. Safe to call when no batch is running.
  */
 function cancelQueue() {
   if (!isProcessingQueue) return;
@@ -420,9 +359,6 @@ function cancelQueue() {
   console.log('[Middleware Log] Cancelling Search All queue');
 
   apiBatchId++;  // invalidate any running API batch loop
-
-  if (currentKibanaTabId) cancelledTabIds.add(currentKibanaTabId);
-  if (currentJaegerTabId) cancelledTabIds.add(currentJaegerTabId);
 
   const currentItem = currentSearchIndex >= 0 && currentSearchIndex < searchQueue.length
     ? searchQueue[currentSearchIndex]
@@ -434,63 +370,7 @@ function cancelQueue() {
   isProcessingQueue = false;
   searchQueue = [];
   currentSearchIndex = -1;
-  cleanupCurrentTabs();
   clearPendingState();
-}
-
-//=============================================================================
-// QUEUE PROCESSING (SEARCH ALL)
-//=============================================================================
-
-/**
- * Process the next item in the search queue
- */
-function processNextInQueue() {
-  currentSearchIndex++;
-  clearPendingState();
-
-  if (currentSearchIndex >= searchQueue.length) {
-    // All done
-    console.log('[Middleware Log] Queue processing complete');
-    isProcessingQueue = false;
-    currentSearchIndex = -1;
-    searchQueue = [];
-    return;
-  }
-
-  const item = searchQueue[currentSearchIndex];
-  console.log('[Middleware Log] Processing', currentSearchIndex + 1, '/', searchQueue.length, '- SR:', item.srNumber);
-
-  // Update SR to "Searching..."
-  paintCell(batchSourceTabId, item.elementId, item.srNumber, 'Searching in the Middleware log...', true);
-
-  // Open Kibana (with tab ID tracking)
-  const kibanaUrl = getKibanaUrl(item.srNumber);
-  chrome.tabs.create({ url: kibanaUrl, active: false }, (tab) => {
-    currentKibanaTabId = tab.id;
-
-    // Per-item timeout. Generous to accommodate ByteStream OSD pages, which load
-    // slowly when many tabs queue up and Chrome throttles background tabs.
-    const timeoutSrNumber = item.srNumber;
-    setTimeout(() => {
-      if (isProcessingQueue && currentSearchIndex < searchQueue.length) {
-        const currentItem = searchQueue[currentSearchIndex];
-        if (currentItem && currentItem.srNumber === timeoutSrNumber) {
-          console.log('[Middleware Log] Timeout for SR:', timeoutSrNumber);
-          // Build timeout message with status code if available
-          let timeoutMessage = 'No records in the Middleware log';
-          if (pendingStatusCode !== null) {
-            timeoutMessage = formatStatusPrefix(pendingBackendValue, pendingStatusCode) + 'Jaeger extraction timed out';
-            clearPendingState();
-          }
-          // Update display to show timeout
-          paintCell(batchSourceTabId, item.elementId, item.srNumber, timeoutMessage);
-          cleanupCurrentTabs();
-          processNextInQueue();
-        }
-      }
-    }, 30000);
-  });
 }
 
 //=============================================================================
@@ -502,7 +382,8 @@ let apiBatchId = 0;
 
 /**
  * Convert an osdLookupSR result into the SR-cell text, reusing the same
- * formatting (and hint tips) as the tab-based single-SR flow.
+ * formatting (and hint tips) as the single-SR dashboard-tab fallback
+ * (formatStatusPrefix / formatErrorDisplay).
  */
 function apiResultToText(result) {
   switch (result.kind) {
@@ -579,49 +460,44 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       const startedSrNumber = lastRightClick.srNumber;
       const startedSourceTabId = lastRightClick.tabId;
       const startedElementId = lastRightClick.elementId;
-      // Staging SRs (> threshold) can be answered instantly via the OSD API.
-      // Legacy SRs have no API and stay entirely on the tab-scrape flow.
-      const useApi = parseInt(startedSrNumber, 10) > SR_THRESHOLD;
 
-      // Construct the Kibana URL with the SR number
-      const kibanaUrl = getKibanaUrl(startedSrNumber);
+      const dashboardUrl = getDashboardUrl(startedSrNumber);
 
       // Immediately update Salesforce to show "Searching..." message
       paintCell(startedSourceTabId, startedElementId, startedSrNumber, 'Searching in the Middleware log...', true);
 
       // Fast path: populate the cell from the API while the dashboard tab loads.
-      if (useApi && startedSourceTabId && startedElementId) {
+      if (startedSourceTabId && startedElementId) {
         osdLookupSR(startedSrNumber).then((result) => {
           paintCell(startedSourceTabId, startedElementId, startedSrNumber, apiResultToText(result));
           // The cell now holds the final API result. Mark the search delivered so
-          // a later cancel (re-running search) won't overwrite it with "cancelled".
+          // a later cancel won't overwrite it with "cancelled", and the dashboard
+          // tab's own (slower) scrape won't overwrite it either (see updateSRDisplay).
           if (activeSingleSR && activeSingleSR.srNumber === startedSrNumber &&
               activeSingleSR.elementId === startedElementId) {
             activeSingleSR.resultDelivered = true;
           }
         }).catch((e) => {
+          // API failed: leave resultDelivered false so the dashboard tab's scrape
+          // can still paint the cell as the fallback.
           console.log('[Middleware Log] Single-SR API lookup failed:', e.message);
         });
       }
 
       // Open the dashboard in a background tab (kept open for a close look; for
-      // errors it also opens the trace/defect page). Remember its context so a
-      // subsequent click can cancel it cleanly. In API mode the trace flow must
-      // not overwrite the API text or auto-close the tab, so its timeout is
-      // skipped (see openInBackground handler).
-      chrome.tabs.create({ url: kibanaUrl, active: false }, (tab) => {
+      // errors it also opens the trace page). Remember its context so a subsequent
+      // click can cancel it cleanly.
+      chrome.tabs.create({ url: dashboardUrl, active: false }, (tab) => {
         activeSingleSR = {
           srNumber: startedSrNumber,
           sourceTabId: startedSourceTabId,
           elementId: startedElementId,
           kibanaTabId: tab.id,
           jaegerTabId: null,
-          traceTimeoutId: null,
-          apiMode: useApi,
           resultDelivered: false
         };
       });
-      console.log('[Middleware Log] Opening Kibana URL for SR:', startedSrNumber, useApi ? '(API fast-path)' : '(legacy)');
+      console.log('[Middleware Log] Opening dashboard for SR:', startedSrNumber);
     } else {
       console.log('[Middleware Log] No SR number available');
     }

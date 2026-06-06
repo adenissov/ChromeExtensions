@@ -7,8 +7,8 @@
 
   const LOG_PREFIX = '[ErrorTraceClick]';
 
-  // Only run on Kibana/OSD ports
-  if (window.location.port !== '5601' && window.location.port !== '15601') {
+  // Only run on the staging OSD dashboard port
+  if (window.location.port !== '15601') {
     return;
   }
 
@@ -16,32 +16,22 @@
   // CONFIGURATION
   //===========================================================================
 
+  // Staging OSD dashboard (staging.cc.toronto.ca:15601). The legacy Kibana
+  // dashboard (port 5601) was retired, so there is only one DOM dialect now.
   const CONFIG = {
-    tableSelector: 'table.osdDocTable',
+    tableSelector: 'table[data-test-subj="docTable"]',
     headerRowSelector: 'thead tr.osdDocTableHeader',
-    dataRowSelector: 'tbody tr.osdDocTable__row',
-    statusCodeHeaderAttr: 'docTableHeader-Status Code',
+    dataRowSelector: 'tbody tr',
+    statusCodeHeaderAttr: 'docTableHeader-span.attributes.http@response@status_code',
     traceHeaderAttr: 'docTableHeader-Trace',
     backendHeaderAttr: 'docTableHeader-Backend',
-    externalRequestIdHeaderAttr: 'docTableHeader-External Request ID',
-    cellValueSelector: 'span[ng-non-bindable]',
+    externalRequestIdHeaderAttr: 'docTableHeader-span.attributes.http@request@header@externalrequestid',
+    cellValueSelector: '.osdDocTableCell__dataField',
     traceLinkSelector: 'a[href]',
-    noResultsSelector: null,  // legacy empty-state DOM not verified; safety-net timeout still fires
-    observerTimeout: 25000,  // keep below background queue timeout
+    noResultsSelector: '[data-test-subj="embeddedSavedSearchDocTable"] .visError',
+    observerTimeout: 25000,  // safety-net for a dashboard tab that never renders
     noResultsStabilityMs: 3000
   };
-
-  const STAGING_CONFIG = {
-    ...CONFIG,
-    tableSelector: 'table[data-test-subj="docTable"]',
-    dataRowSelector: 'tbody tr',
-    cellValueSelector: '.osdDocTableCell__dataField',
-    statusCodeHeaderAttr: 'docTableHeader-span.attributes.http@response@status_code',
-    externalRequestIdHeaderAttr: 'docTableHeader-span.attributes.http@request@header@externalrequestid',
-    noResultsSelector: '[data-test-subj="embeddedSavedSearchDocTable"] .visError'
-  };
-
-  const ACTIVE_CONFIG = window.location.port === '15601' ? STAGING_CONFIG : CONFIG;
 
   //===========================================================================
   // COLUMN INDEX DETECTION
@@ -53,7 +43,7 @@
    * @returns {Object|null} - { statusCodeIndex, traceIndex, backendIndex, externalRequestIdIndex } or null if required columns not found
    */
   function findColumnIndices(table) {
-    const headerRow = table.querySelector(ACTIVE_CONFIG.headerRowSelector);
+    const headerRow = table.querySelector(CONFIG.headerRowSelector);
     if (!headerRow) {
       console.log(LOG_PREFIX, 'Header row not found');
       return null;
@@ -69,13 +59,13 @@
       const span = th.querySelector('span[data-test-subj]');
       if (span) {
         const testSubj = span.getAttribute('data-test-subj');
-        if (testSubj === ACTIVE_CONFIG.statusCodeHeaderAttr) {
+        if (testSubj === CONFIG.statusCodeHeaderAttr) {
           statusCodeIndex = index;
-        } else if (testSubj === ACTIVE_CONFIG.traceHeaderAttr) {
+        } else if (testSubj === CONFIG.traceHeaderAttr) {
           traceIndex = index;
-        } else if (testSubj === ACTIVE_CONFIG.backendHeaderAttr) {
+        } else if (testSubj === CONFIG.backendHeaderAttr) {
           backendIndex = index;
-        } else if (testSubj === ACTIVE_CONFIG.externalRequestIdHeaderAttr) {
+        } else if (testSubj === CONFIG.externalRequestIdHeaderAttr) {
           externalRequestIdIndex = index;
         }
       }
@@ -107,7 +97,7 @@
    * @returns {number|null} - Parsed status code or null
    */
   function parseStatusCode(cell) {
-    const valueSpan = cell.querySelector(ACTIVE_CONFIG.cellValueSelector);
+    const valueSpan = cell.querySelector(CONFIG.cellValueSelector);
     if (!valueSpan) return null;
 
     const text = valueSpan.textContent.trim();
@@ -123,7 +113,7 @@
   function parseCellText(cell) {
     if (!cell) return '';
     // Try the standard value span first
-    const valueSpan = cell.querySelector(ACTIVE_CONFIG.cellValueSelector);
+    const valueSpan = cell.querySelector(CONFIG.cellValueSelector);
     const text = valueSpan ? valueSpan.textContent.trim() : cell.textContent.trim();
     // Kibana shows "-" for empty/null values — treat as empty
     return text === '-' ? '' : text;
@@ -141,7 +131,7 @@
    * @returns {boolean} - True if link was found and opened
    */
   function clickTraceLink(cell, statusCode, backendValue) {
-    const link = cell.querySelector(ACTIVE_CONFIG.traceLinkSelector);
+    const link = cell.querySelector(CONFIG.traceLinkSelector);
     if (link && link.href) {
       console.log(LOG_PREFIX, 'Opening trace link in background:', link.href, 'status:', statusCode, 'backend:', backendValue);
       // Send to background script to open in background tab
@@ -194,7 +184,7 @@
     const indices = findColumnIndices(table);
     if (!indices) return false;
 
-    const domRows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
+    const domRows = table.querySelectorAll(CONFIG.dataRowSelector);
     if (domRows.length === 0) {
       console.log(LOG_PREFIX, 'Table is empty - no records');
       chrome.runtime.sendMessage({ action: 'noRecordsFound' });
@@ -254,15 +244,15 @@
    * inside the Discover panel container and never creates the data table.
    */
   function hasNoResultsState() {
-    if (!ACTIVE_CONFIG.noResultsSelector) return false;
-    return !!document.querySelector(ACTIVE_CONFIG.noResultsSelector);
+    if (!CONFIG.noResultsSelector) return false;
+    return !!document.querySelector(CONFIG.noResultsSelector);
   }
 
   function getLoadedTable() {
-    const table = document.querySelector(ACTIVE_CONFIG.tableSelector);
+    const table = document.querySelector(CONFIG.tableSelector);
     if (!table) return null;
 
-    const rows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
+    const rows = table.querySelectorAll(CONFIG.dataRowSelector);
     return rows.length > 0 ? table : null;
   }
 
@@ -273,7 +263,7 @@
     // Check if table already exists with rows.
     const existingTable = getLoadedTable();
     if (existingTable) {
-      const rows = existingTable.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
+      const rows = existingTable.querySelectorAll(CONFIG.dataRowSelector);
       console.log(LOG_PREFIX, 'Table already present with', rows.length, 'rows');
       scanAndClickFirstError(existingTable);
       return;
@@ -302,7 +292,7 @@
     };
 
     const scheduleNoResultsReport = (reason) => {
-      if (!ACTIVE_CONFIG.noResultsSelector || noResultsTimerId) return;
+      if (!CONFIG.noResultsSelector || noResultsTimerId) return;
 
       noResultsReason = reason;
       console.log(LOG_PREFIX, 'Empty-state panel seen; waiting to confirm no records. Reason:', reason);
@@ -312,7 +302,7 @@
 
         const table = getLoadedTable();
         if (table) {
-          const rows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
+          const rows = table.querySelectorAll(CONFIG.dataRowSelector);
           console.log(LOG_PREFIX, 'Empty-state was transient; table now has', rows.length, 'rows');
           cleanup();
           scanAndClickFirstError(table);
@@ -326,7 +316,7 @@
         } else {
           console.log(LOG_PREFIX, 'Empty-state disappeared before confirmation; continuing to wait');
         }
-      }, ACTIVE_CONFIG.noResultsStabilityMs);
+      }, CONFIG.noResultsStabilityMs);
     };
 
     if (hasNoResultsState()) {
@@ -336,7 +326,7 @@
     observer = new MutationObserver((mutations) => {
       const table = getLoadedTable();
       if (table) {
-        const rows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
+        const rows = table.querySelectorAll(CONFIG.dataRowSelector);
         console.log(LOG_PREFIX, 'Table loaded with', rows.length, 'rows');
         cleanup();
         scanAndClickFirstError(table);
@@ -376,7 +366,7 @@
         console.log(LOG_PREFIX, 'Timeout waiting for table - not a dashboard, suppressing');
         cleanup();
       }
-    }, ACTIVE_CONFIG.observerTimeout);
+    }, CONFIG.observerTimeout);
   }
 
   //===========================================================================

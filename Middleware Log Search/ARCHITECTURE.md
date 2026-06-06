@@ -9,68 +9,54 @@ This document explains *why* the extension is structured the way it is. For user
 | File | Runs on | Purpose |
 |---|---|---|
 | `manifest.json` | — | MV3 manifest, host permissions, content-script matchers |
-| `background.js` | Service worker | Context menu, tab orchestration, queue, API/tab mode routing, message routing |
+| `background.js` | Service worker | Context menu, API batch + single-SR orchestration, dashboard tab, message routing |
 | `osd-api.js` | Service worker (`importScripts`) | Query the staging OSD search API directly; replicate the table/trace result logic server-side |
-| `row-classify.js` | Service worker (`importScripts`) **and** the Kibana/OSD pages (content script) | Pure `classifyStatusRows(rows)` — the single shared "which row wins, success or error?" decision (§4) |
+| `row-classify.js` | Service worker (`importScripts`) **and** the OSD dashboard pages (content script) | Pure `classifyStatusRows(rows)` — the single shared "which row wins, success or error?" decision (§4a) |
 | `content.js` | Salesforce (`*.salesforce.com`, `*.force.com`, `*.lightning.force.com`) | SR validation on right-click, in-place display update + persistence across row re-render, table reflow |
-| `error-trace-click.js` | Kibana (`portal.cc.toronto.ca`) and OSD staging (`staging.cc.toronto.ca`), restricted to ports `5601` and `15601` | Find the most-recent error row, click its Trace link |
-| `jaeger-expand.js` | All URLs (filtered internally) | Extract error message from the trace page; auto-scroll |
+| `error-trace-click.js` | OSD staging dashboard (`staging.cc.toronto.ca`), restricted to port `15601` | Find the most-recent error row, click its Trace link |
+| `jaeger-expand.js` | All URLs (filtered internally) | Extract error message from the trace page; auto-scroll. Still handles the legacy Jaeger UI as well as the ByteStream page, kept for manually opened old traces |
 
 ---
 
 ## 2. Why the script split
 
-Each content script is scoped to **one DOM contract**. Salesforce list views, the legacy Kibana UI, the new OSD dashboard, and the Jaeger / ByteStream trace pages are all on different hosts with different DOM structures and different load timings. Combining them into a single content script would force every page to load every selector and every timing strategy.
+Each content script is scoped to **one DOM contract**. Salesforce list views, the OSD dashboard, and the ByteStream (and legacy Jaeger) trace pages are on different hosts with different DOM structures and different load timings. Combining them into a single content script would force every page to load every selector and every timing strategy.
 
 The trade-off: cross-script flow has to go through `background.js` via message passing. We accept that because content scripts on different hosts can't talk to each other directly anyway.
 
 ---
 
-## 3. Threshold-based URL routing
+## 3. One dashboard (legacy stack retired)
 
-311 migrated middleware logs to a new dashboard partway through the SR-number range. The extension picks the URL based on a numeric threshold:
+311 once split middleware logs across a legacy Kibana stack (`portal.cc.toronto.ca:5601`) and a newer OSD dashboard (`staging.cc.toronto.ca:15601`), routed by a numeric `SR_THRESHOLD`. The legacy stack has since been retired — old SRs are no longer searched — so the threshold, the second URL template, and the dual routing are **gone**. Every SR now resolves to the single staging dashboard:
 
 ```js
 // background.js
-const SR_THRESHOLD = 9227488;
-
-function getKibanaUrl(srNumber) {
-  return parseInt(srNumber, 10) > SR_THRESHOLD
-    ? KIBANA_URL_TEMPLATE_STAGING.replace('NNNNNNNN', srNumber)
-    : KIBANA_URL_TEMPLATE.replace('NNNNNNNN', srNumber);
+function getDashboardUrl(srNumber) {
+  return DASHBOARD_URL_TEMPLATE.replace('NNNNNNNN', srNumber);
 }
 ```
 
-**Why a numeric cutoff** instead of, say, racing both URLs and taking the first that finds the SR:
-- **Cost**: opening two background tabs per SR and tearing one down would double tab-creation overhead and make batch mode unbearably slow.
-- **Determinism**: the migration was a hard cutoff — an SR is on exactly one side of it.
-
-If the cutoff shifts, only the constant changes.
+The only legacy code deliberately kept is `jaeger-expand.js`'s Jaeger trace-page expander (§5), in case someone opens an old Jaeger trace by hand.
 
 ---
 
-## 4. Two Kibana DOM dialects
+## 4. One dashboard DOM dialect
 
-The legacy Kibana (port 5601) and the new OSD (port 15601) render the same logical dashboard differently. `error-trace-click.js` carries two configs and picks at runtime:
+`error-trace-click.js` carries a single `CONFIG` of selectors for the OSD dashboard:
 
 ```js
-const CONFIG = { tableSelector: 'table.osdDocTable', cellValueSelector: 'span[ng-non-bindable]', ... };
-
-const STAGING_CONFIG = {
-  ...CONFIG,
+const CONFIG = {
   tableSelector: 'table[data-test-subj="docTable"]',
   dataRowSelector: 'tbody tr',
   cellValueSelector: '.osdDocTableCell__dataField',
   statusCodeHeaderAttr: 'docTableHeader-span.attributes.http@response@status_code',
-  externalRequestIdHeaderAttr: 'docTableHeader-span.attributes.http@request@header@externalrequestid'
+  externalRequestIdHeaderAttr: 'docTableHeader-span.attributes.http@request@header@externalrequestid',
+  ...
 };
-
-const ACTIVE_CONFIG = window.location.port === '15601' ? STAGING_CONFIG : CONFIG;
 ```
 
-The spread + selective overrides keep the **only** five fields that actually differ visible in one place. Everything else (header-row selector, trace-link selector, observer timeout, success codes) is shared.
-
-The port-based switch is the simplest reliable signal — the two dashboards are on different ports of unrelated hosts.
+The script is gated to port `15601`. The earlier version carried a second `CONFIG`/`STAGING_CONFIG` pair switched on `window.location.port` to also handle the legacy Kibana DOM at port 5601; that was removed with the legacy stack (§3).
 
 **Row selection is *not* in this file.** Once `error-trace-click.js` has scraped the rows, the "which row wins — success or error?" decision is delegated to `classifyStatusRows` in `row-classify.js` (§4a), the same function the API path uses. This file only handles DOM scraping and the resulting click; it normalizes each scraped row to the shared shape before calling.
 
@@ -117,7 +103,7 @@ The deep search exists because real responses nest `errorMessage` differently ac
 
 ## 6. MutationObserver instead of timed waits
 
-Both Kibana variants and both trace UIs are SPAs — content arrives over time, not at `DOMContentLoaded`. We use `MutationObserver` to react when the relevant elements (`AccordianLogs`, `KeyValueTable`, `euiCodeBlock__line`, the staging `<table>`) appear, with bounded fallback timeouts.
+The OSD dashboard and the trace UIs are SPAs — content arrives over time, not at `DOMContentLoaded`. We use `MutationObserver` to react when the relevant elements (`AccordianLogs`, `KeyValueTable`, `euiCodeBlock__line`, the dashboard `<table>`) appear, with bounded fallback timeouts.
 
 Polling on a fixed interval would either be slow (long interval) or wasteful (short interval). Fixed `setTimeout` waits would either time out before slow loads or stall on fast ones. The observer fires **exactly when the DOM changes**.
 
@@ -127,18 +113,13 @@ Polling on a fixed interval would either be slow (long interval) or wasteful (sh
 
 | Timeout | Where | Reason |
 |---|---|---|
-| 10 s | `error-trace-click.js` `observerTimeout` | Stop watching for the Kibana table; if it never loads, give up silently |
+| 25 s | `error-trace-click.js` `observerTimeout` | Stop watching for the dashboard table; if it never loads, give up silently |
 | 10 s | `jaeger-expand.js` "no records" fallback | Only fires when `extractionAttempts > 0` or it's a Jaeger page — see §8 |
-| **30 s** | `background.js` per-item batch timeout | Was 12 s. Chrome throttles background tabs, and OSD is heavy to render — 12 s timed out spuriously |
 | 5 min | `jaeger-expand.js` observer disconnect | Hard cap; user might leave the tab |
 
 In `jaeger-expand.js` these and the smaller delays are not scattered literals — they live in one named `TIMERS` block at the top of the file (`OBSERVER_DISCONNECT_MS`, `INNER_SCROLL_CAP_MS`, `EXTRACT_AFTER_ACCORDION_MS`, etc.). Tune timing there, not inline.
 
-**Single-SR mode has *no* per-item timeout** — opening the tab and waiting for whatever comes back. There's no queue advancing behind it, so a slow load just means a longer wait.
-
-Batch mode (legacy tab flow) needs the timeout because each item must yield to the next.
-
-**API mode (§13) has no tab timeout at all.** A staging single-SR still opens the dashboard tab for a closer look, but its result comes from the API, so the trace-scrape timeout is *deliberately skipped* (`apiMode` flag) — otherwise it would overwrite the API text with "timed out" and close the tab. The API `fetch` has its own implicit network timeout.
+**There is no per-search tab timeout in `background.js`.** Every search now answers from the API (§13): the batch (`runApiBatch`) awaits each `fetch` sequentially, and a single-SR fills its cell from the API while a dashboard tab opens alongside purely for the human. The API `fetch` has its own implicit network timeout. The dashboard tab's own scrape can't overwrite a delivered API result (`resultDelivered`, §15), so it needs no extension-side timeout. (The earlier tab-scrape flow had a 30 s per-item batch timeout and a single-SR trace timeout; both were removed with the legacy stack.)
 
 ---
 
@@ -188,27 +169,23 @@ What worked: add a CSS class to **five levels** of parent elements. The class ov
 The background script in MV3 is a non-persistent service worker. In-memory state (`lastRightClick`, `activeSingleSR`, queue state) is lost when the worker idles out. We accept this because:
 
 - **Single-SR mode** tolerates a worker restart between right-click and menu-click. If it happens, the right-click's `updateMenuState` message gets a "port closed" failure (logged but harmless) and the user re-issues the action.
-- **Batch mode** keeps the worker alive by having continuous activity (open tab, listen for message, open next tab). The worker doesn't idle out mid-queue.
+- **Batch mode** (§13) is a single `async` function (`runApiBatch`) awaiting sequential `fetch`es; the in-flight `await` keeps the worker alive, and a generation token (`apiBatchId`) cancels it if a new search starts.
 
-If batch reliability ever becomes a problem, the next step is persisting queue state to `chrome.storage.session`.
-
-API-mode batch (§13) is a single `async` function awaiting sequential `fetch`es; the in-flight `await` keeps the worker alive, and a generation token (`apiBatchId`) cancels it if a new search starts.
+If batch reliability ever becomes a problem, the next step is persisting batch state to `chrome.storage.session`.
 
 ---
 
 ## 12. Known limitations
 
-- **Threshold-based routing** assumes a sharp cutoff. If logs are ever dual-written across both stacks during a transition window, an SR could exist on either side; the extension only checks one.
-- **Auto-scroll** is implemented for the new ByteStream layout only. The Jaeger UI has its own existing accordion-expand behavior in the same file.
-- **"Jaeger extraction timed out"** can still happen on very slow legacy single-SR loads (>30 s). Re-running the SR typically succeeds. Staging SRs use the API (§13) and don't hit this.
+- **Old SRs return "No records."** The legacy log stack was retired (§3); every search now hits only the staging dashboard, so an SR that predates it simply comes back "No records in the Middleware log."
+- **Auto-scroll** is implemented for the ByteStream layout only. The legacy Jaeger UI has its own existing accordion-expand behavior in the same file (kept for manually opened old traces).
 - **`findErrorMessageDeep`** returns the first match in DFS order. Backends with multiple errors only get the first one reported.
 - **Service-worker restart** during single-SR mode produces a "message port closed" warning in the Salesforce console; this is informational, not an error.
-- **API batch mode (§13) is staging-only and not threshold-gated.** It runs *every* SR through the staging API. This is safe today because legacy SRs (≤ threshold) never appear in a batch — they predate the dashboard. If a legacy SR ever ended up in a batch, it would wrongly come back "No records" instead of falling back to the legacy tab flow.
 - **The far-left grid row-number gutter doesn't height-sync with expanded cells.** The Salesforce report renders the row-number gutter as a *separate* frozen column. When an expanded Request-Number cell grows tall (§14), its data row grows but the gutter's matching cell does not, so the row numbers drift out of alignment. The gutter is not reachable by the row-level CSS in §10/§14. Open; not yet fixed (candidate fixes: hide the gutter, or target it directly once its DOM is known).
 
 ---
 
-## 13. Direct OSD API query (staging fast-path)
+## 13. Direct OSD API query (the primary path)
 
 The staging dashboard is a heavy SPA. Opening it in a *background* tab is slow because Chrome throttles background tabs (timer clamping, suspended `requestAnimationFrame`/painting), so the table can take many seconds to render before `error-trace-click.js` can scrape it. Switching focus to the tab speeds it up — which is exactly the symptom that motivated this path.
 
@@ -226,12 +203,11 @@ fetch('https://staging.cc.toronto.ca:15601/internal/search/opensearch', {
 
 **Faithful replication, not a new query.** The request body (`buildSearchBody`) and the painless `script_fields` (Trace, HttpStatusCode, Backend, External/Request IDs) are copied **verbatim** from a real dashboard search captured in DevTools, so the API returns the exact column values the scraped table used to show. `osdLookupSR` normalizes the hits and runs them through the **shared** `classifyStatusRows` (§4a) — the same decision `error-trace-click.js` uses — then, on an error verdict, fetches that row's trace and pulls the `response.payload` error message via the same `findErrorMessageDeep` walker as `jaeger-expand.js` (§5).
 
-**Where it's used (`useApi = srNumber > SR_THRESHOLD`):**
+**Where it's used (every SR — there is no longer a threshold):**
 - **Batch** — fully API; no tabs opened. A single `runApiBatch` awaits each SR sequentially.
-- **Single SR** — API populates the cell instantly *and* the dashboard tab still opens (kept open for a closer look; errors also open the Trace page). The two are independent: the API write is the fast answer, the tab is for the human.
-- **Legacy SRs** — no API exists for the legacy stack; they stay entirely on the tab-scrape flow.
+- **Single SR** — API populates the cell instantly *and* the dashboard tab still opens (kept open for a closer look; errors also open the Trace page). The two are independent: the API write is the fast answer, the tab is for the human. If the API `fetch` fails, the dashboard tab's scrape paints the cell as the fallback (`resultDelivered` stays false — §15).
 
-**Trade-off / fragility:** the endpoint and body are undocumented and version-specific (`osd-version: 2.19.0`). An OSD upgrade can change either. The tab-scrape flow remains as the legacy path and the conceptual fallback. If the API shape breaks, the fix is to re-capture a search request and update `buildSearchBody`/`SCRIPT_FIELDS`.
+**Trade-off / fragility:** the endpoint and body are undocumented and version-specific (`osd-version: 2.19.0`). An OSD upgrade can change either. The dashboard tab that opens for single-SR is the conceptual fallback (its `error-trace-click.js` scrape still runs). If the API shape breaks, the fix is to re-capture a search request and update `buildSearchBody`/`SCRIPT_FIELDS`.
 
 ---
 
@@ -268,4 +244,7 @@ paintCell(tabId, elementId, srNumber, text, isSearching = false)
 
 **Routing a reply to the right cell.** Tab-scrape replies (`statusResult`, `noRecordsFound`, `responseBodyExtracted`) arrive from a Kibana/Jaeger tab and must be mapped back to the cell that asked for them. `resolveReplyTarget(senderTabId)` is the one resolver: it matches the sending tab against `activeSingleSR`'s kibana/jaeger tab ids or the current queue item, and returns `{ tabId, elementId, srNumber }` — or `null`, in which case the reply is **dropped and logged** rather than painted into whatever cell happens to be current. This replaced a set of loose globals (`lastValidSRNumber`/`sourceTabId`/`elementId`) that any handler could overwrite; right-click context now lives in one `lastRightClick = { tabId, srNumber, elementId, allItems }` object, batch source in `batchSourceTabId`.
 
-**`resultDelivered` — don't cancel a finished search.** In the API fast-path a staging single-SR fills its cell instantly but keeps its dashboard/Trace tabs open (§13). `activeSingleSR` therefore lingers after the answer is already shown. Without a guard, the *next* search's `cancelSingleSR()` would paint "Search cancelled" over the completed text. `activeSingleSR.resultDelivered` is set `true` once the API paints the final result, and `cancelSingleSR()` only writes "Search cancelled" when `!resultDelivered` — a finished search is left intact; only a genuinely in-flight one is cancellable.
+**`resultDelivered` — don't overwrite or cancel a finished search.** In the API fast-path a staging single-SR fills its cell instantly but keeps its dashboard/Trace tabs open (§13). `activeSingleSR` therefore lingers after the answer is already shown, and those tabs' own `error-trace-click.js` / `jaeger-expand.js` still send `statusResult` / `noRecordsFound` / `responseBodyExtracted` replies. `activeSingleSR.resultDelivered` is set `true` once the API paints the final result, and it guards two places:
+
+- `updateSRDisplay()` drops a tab-scrape reply for a `resultDelivered` single-SR instead of painting it — otherwise the slow, throttled dashboard render (the very thing the API path exists to avoid) could overwrite the correct API answer, e.g. a sluggish dashboard firing "No records" over a real API error. While `resultDelivered` is still `false` (API pending, or it threw), the tab scrape *does* paint, so it remains the fallback it always was for legacy SRs.
+- `cancelSingleSR()` only writes "Search cancelled" when `!resultDelivered`, so the *next* search can't paint "cancelled" over the completed text — a finished search is left intact; only a genuinely in-flight one is cancellable.

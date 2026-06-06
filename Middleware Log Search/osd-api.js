@@ -1,7 +1,7 @@
 // Queries the OSD search API directly from the service worker, instead of opening
 // and scraping a background dashboard tab. Reuses the logged-in OSD session cookie
-// (credentials:'include'); no API key needed. Used for staging SRs (> SR_THRESHOLD)
-// in both single-SR and batch ("Search All") mode; legacy SRs stay on the tab flow.
+// (credentials:'include'); no API key needed. Used for every SR in both single-SR
+// and batch ("Search All") mode (the legacy Kibana stack was retired).
 
 const OSD_SEARCH_URL = 'https://staging.cc.toronto.ca:15601/internal/search/opensearch';
 const OSD_INDEX = 'otel-v1-apm-span-*';
