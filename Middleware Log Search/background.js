@@ -2,7 +2,8 @@
 // Creates context menu and handles menu clicks to open Kibana dashboard
 
 // EXPERIMENT (branch experiment/osd-api-query): direct OSD search API probe.
-importScripts('osd-api.js');
+// row-classify.js first — osd-api.js calls classifyStatusRows from it.
+importScripts('row-classify.js', 'osd-api.js');
 
 //=============================================================================
 // CONSTANTS
@@ -20,16 +21,17 @@ const TRACE_EXTRACTION_TIMEOUT_MS = 30000;
 // STATE
 //=============================================================================
 
-// Store the SR number from the last validation
-let lastValidSRNumber = null;
-// Store source tab info for cross-tab communication
-let sourceTabId = null;
-let elementId = null;
+// Last right-click context, bridging the right-click (updateMenuState) to the
+// later menu click (onClicked) — the context-menu API hands onClicked nothing
+// about what was under the cursor. Shape: { tabId, srNumber, elementId, allItems }.
+let lastRightClick = { tabId: null, srNumber: null, elementId: null, allItems: [] };
 
 // Queue processing state (for "Search All")
 let searchQueue = [];
 let currentSearchIndex = -1;
 let isProcessingQueue = false;
+// Salesforce tab a running batch paints into (set when a batch starts).
+let batchSourceTabId = null;
 
 // Tab tracking for cleanup (queue mode only)
 let currentKibanaTabId = null;
@@ -45,9 +47,6 @@ let activeSingleSR = null;
 // Status code and backend value of the current error being traced (for prepending to Jaeger result)
 let pendingStatusCode = null;
 let pendingBackendValue = null;
-
-// Stored items from last right-click (for "Search All")
-let pendingAllItems = [];
 
 //=============================================================================
 // HELPER FUNCTIONS
@@ -121,23 +120,63 @@ function advanceQueueIfProcessing() {
 }
 
 /**
- * Send display update to Salesforce tab
- * @param {string} responseBody - The message to display
+ * Paint an SR cell in the Salesforce tab. The single place that builds the
+ * updateSRDisplay message. Missing tab/element is a no-op; send failures
+ * (tab closed, context invalidated) are swallowed.
+ * @param {number} tabId - Salesforce tab to message
+ * @param {string} elementId - data-mwlog-id of the target SR link
+ * @param {string} srNumber - SR number (leading token of the cell)
+ * @param {string} text - Display text to render
  */
-function updateSRDisplay(responseBody) {
-  if (!sourceTabId || !elementId) {
-    console.log('[Middleware Log] Cannot update display - missing sourceTabId or elementId');
+function paintCell(tabId, elementId, srNumber, text) {
+  if (!tabId || !elementId) {
+    console.log('[Middleware Log] paintCell skipped - missing tab/element for SR', srNumber, '(tab:', tabId, 'el:', elementId, ')');
     return;
   }
-
-  chrome.tabs.sendMessage(sourceTabId, {
+  chrome.tabs.sendMessage(tabId, {
     action: 'updateSRDisplay',
-    elementId: elementId,
-    srNumber: lastValidSRNumber,
-    responseBody: responseBody
+    elementId,
+    srNumber,
+    responseBody: text
   }).catch(error => {
-    console.log('[Middleware Log] Failed to update SR display:', error.message);
+    // Tab closed or content script orphaned (extension reloaded without a page refresh).
+    console.log('[Middleware Log] paintCell failed for SR', srNumber, '-', error.message);
   });
+}
+
+/**
+ * Resolve which SR cell a tab-scrape reply belongs to, from the in-flight
+ * search context, by matching the sender (Kibana/Jaeger) tab. Returns
+ * { tabId, elementId, srNumber } for the Salesforce cell, or null if the
+ * sender doesn't belong to any active search (stale/late message).
+ */
+function resolveReplyTarget(senderTabId) {
+  if (!senderTabId) return null;
+  if (activeSingleSR &&
+      (senderTabId === activeSingleSR.kibanaTabId || senderTabId === activeSingleSR.jaegerTabId)) {
+    return { tabId: activeSingleSR.sourceTabId, elementId: activeSingleSR.elementId, srNumber: activeSingleSR.srNumber };
+  }
+  if (isProcessingQueue &&
+      (senderTabId === currentKibanaTabId || senderTabId === currentJaegerTabId)) {
+    const item = searchQueue[currentSearchIndex];
+    if (item) return { tabId: batchSourceTabId, elementId: item.elementId, srNumber: item.srNumber };
+  }
+  return null;
+}
+
+/**
+ * Paint the SR cell for a tab-scrape reply, routed by the sender tab rather
+ * than by mutable globals (so a later right-click can't redirect it).
+ * @param {number} senderTabId - The Kibana/Jaeger tab the reply came from
+ * @param {string} responseBody - The message to display
+ */
+function updateSRDisplay(senderTabId, responseBody) {
+  const target = resolveReplyTarget(senderTabId);
+  if (!target) {
+    console.log('[Middleware Log] Dropping reply - no active search owns tab', senderTabId);
+    return;
+  }
+  paintCell(target.tabId, target.elementId, target.srNumber, responseBody);
 }
 
 function startSingleSRTraceTimeout() {
@@ -156,12 +195,7 @@ function startSingleSRTraceTimeout() {
       timeoutMessage = formatStatusPrefix(pendingBackendValue, pendingStatusCode) + timeoutMessage;
     }
 
-    chrome.tabs.sendMessage(timeoutContext.sourceTabId, {
-      action: 'updateSRDisplay',
-      elementId: timeoutContext.elementId,
-      srNumber: timeoutContext.srNumber,
-      responseBody: timeoutMessage
-    }).catch(() => {});
+    paintCell(timeoutContext.sourceTabId, timeoutContext.elementId, timeoutContext.srNumber, timeoutMessage);
 
     if (timeoutContext.jaegerTabId) {
       cancelledTabIds.add(timeoutContext.jaegerTabId);
@@ -219,17 +253,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'updateMenuState') {
-    // Store the SR number and source tab info for later use
+    // Record the right-click context for the later menu click.
     if (message.isValid && message.srNumber) {
-      lastValidSRNumber = message.srNumber;
-      sourceTabId = sender.tab?.id;
-      elementId = message.elementId;
-      console.log('[Middleware Log] Stored source tab ID:', sourceTabId, 'element ID:', elementId);
+      lastRightClick.srNumber = message.srNumber;
+      lastRightClick.elementId = message.elementId;
+      lastRightClick.tabId = sender.tab?.id;
+      console.log('[Middleware Log] Stored right-click tab ID:', lastRightClick.tabId, 'element ID:', lastRightClick.elementId);
     }
 
     // Always store source tab ID when in column (for "Search All")
     if (message.isValidColumn) {
-      sourceTabId = sender.tab?.id;
+      lastRightClick.tabId = sender.tab?.id;
     }
 
     // Update single-SR context menu enabled state.
@@ -240,13 +274,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // Update "Search All" context menu state — also stays enabled during a batch.
     if (message.isValidColumn && message.allItems && message.allItems.length > 0) {
-      pendingAllItems = message.allItems;
+      lastRightClick.allItems = message.allItems;
       chrome.contextMenus.update('middlewareLogSearchAll', {
         enabled: true
       });
-      console.log('[Middleware Log] Search All menu enabled with', pendingAllItems.length, 'items');
+      console.log('[Middleware Log] Search All menu enabled with', lastRightClick.allItems.length, 'items');
     } else {
-      pendingAllItems = [];
+      lastRightClick.allItems = [];
       chrome.contextMenus.update('middlewareLogSearchAll', { enabled: false });
     }
 
@@ -274,7 +308,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Handle direct status result from Kibana (no Jaeger needed)
   if (message.action === 'statusResult') {
     console.log('[Middleware Log] Status result:', message.statusCode, message.displayText);
-    updateSRDisplay(message.displayText);
+    updateSRDisplay(sender.tab?.id, message.displayText);
     clearActiveSingleSRIfFromIt(sender.tab?.id);
     advanceQueueIfProcessing();
   }
@@ -282,7 +316,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Handle no records found in Kibana (empty table)
   if (message.action === 'noRecordsFound') {
     console.log('[Middleware Log] No records found in Kibana');
-    updateSRDisplay('No records in the Middleware log');
+    updateSRDisplay(sender.tab?.id, 'No records in the Middleware log');
     clearActiveSingleSRIfFromIt(sender.tab?.id);
     advanceQueueIfProcessing();
   }
@@ -297,7 +331,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.responseBody) {
-      updateSRDisplay(formatErrorDisplay(pendingStatusCode, pendingBackendValue, message.responseBody));
+      updateSRDisplay(sender.tab?.id, formatErrorDisplay(pendingStatusCode, pendingBackendValue, message.responseBody));
     } else {
       console.log('[Middleware Log] Missing response body');
     }
@@ -343,13 +377,8 @@ function cancelSingleSR() {
   // Only paint "Search cancelled" if the search was genuinely still in flight.
   // In API mode the cell already holds the final result (resultDelivered) even
   // though the dashboard tab lingers — don't clobber it.
-  if (activeSingleSR.sourceTabId && !activeSingleSR.resultDelivered) {
-    chrome.tabs.sendMessage(activeSingleSR.sourceTabId, {
-      action: 'updateSRDisplay',
-      elementId: activeSingleSR.elementId,
-      srNumber: activeSingleSR.srNumber,
-      responseBody: 'Search cancelled'
-    }).catch(() => {});
+  if (!activeSingleSR.resultDelivered) {
+    paintCell(activeSingleSR.sourceTabId, activeSingleSR.elementId, activeSingleSR.srNumber, 'Search cancelled');
   }
 
   clearTimeout(activeSingleSR.traceTimeoutId);
@@ -396,13 +425,8 @@ function cancelQueue() {
   const currentItem = currentSearchIndex >= 0 && currentSearchIndex < searchQueue.length
     ? searchQueue[currentSearchIndex]
     : null;
-  if (currentItem && sourceTabId) {
-    chrome.tabs.sendMessage(sourceTabId, {
-      action: 'updateSRDisplay',
-      elementId: currentItem.elementId,
-      srNumber: currentItem.srNumber,
-      responseBody: 'Search cancelled'
-    }).catch(() => {});
+  if (currentItem) {
+    paintCell(batchSourceTabId, currentItem.elementId, currentItem.srNumber, 'Search cancelled');
   }
 
   isProcessingQueue = false;
@@ -435,19 +459,8 @@ function processNextInQueue() {
   const item = searchQueue[currentSearchIndex];
   console.log('[Middleware Log] Processing', currentSearchIndex + 1, '/', searchQueue.length, '- SR:', item.srNumber);
 
-  // Update tracking variables for message routing
-  elementId = item.elementId;
-  lastValidSRNumber = item.srNumber;
-
   // Update SR to "Searching..."
-  chrome.tabs.sendMessage(sourceTabId, {
-    action: 'updateSRDisplay',
-    elementId: item.elementId,
-    srNumber: item.srNumber,
-    responseBody: 'Searching in the Middleware log...'
-  }).catch(error => {
-    console.log('[Middleware Log] Failed to update SR display:', error.message);
-  });
+  paintCell(batchSourceTabId, item.elementId, item.srNumber, 'Searching in the Middleware log...');
 
   // Open Kibana (with tab ID tracking)
   const kibanaUrl = getKibanaUrl(item.srNumber);
@@ -469,12 +482,7 @@ function processNextInQueue() {
             clearPendingState();
           }
           // Update display to show timeout
-          chrome.tabs.sendMessage(sourceTabId, {
-            action: 'updateSRDisplay',
-            elementId: item.elementId,
-            srNumber: item.srNumber,
-            responseBody: timeoutMessage
-          }).catch(() => {});
+          paintCell(batchSourceTabId, item.elementId, item.srNumber, timeoutMessage);
           cleanupCurrentTabs();
           processNextInQueue();
         }
@@ -517,9 +525,10 @@ function apiResultToText(result) {
  * throttled background rendering) and update its cell as the result returns.
  * Single-SR search is unaffected — it still opens the dashboard tab.
  */
-async function runApiBatch(items) {
+async function runApiBatch(items, sfTabId) {
   const myId = ++apiBatchId;
   isProcessingQueue = true;
+  batchSourceTabId = sfTabId;
   searchQueue = items.slice();
   currentSearchIndex = -1;
 
@@ -530,12 +539,7 @@ async function runApiBatch(items) {
     currentSearchIndex = i;
     const item = searchQueue[i];
 
-    chrome.tabs.sendMessage(sourceTabId, {
-      action: 'updateSRDisplay',
-      elementId: item.elementId,
-      srNumber: item.srNumber,
-      responseBody: 'Searching in the Middleware log...'
-    }).catch(() => {});
+    paintCell(batchSourceTabId, item.elementId, item.srNumber, 'Searching in the Middleware log...');
 
     let result;
     try {
@@ -546,12 +550,7 @@ async function runApiBatch(items) {
     }
     if (myId !== apiBatchId) return;  // cancelled while awaiting
 
-    chrome.tabs.sendMessage(sourceTabId, {
-      action: 'updateSRDisplay',
-      elementId: item.elementId,
-      srNumber: item.srNumber,
-      responseBody: apiResultToText(result)
-    }).catch(() => {});
+    paintCell(batchSourceTabId, item.elementId, item.srNumber, apiResultToText(result));
   }
 
   if (myId === apiBatchId) {
@@ -569,15 +568,15 @@ async function runApiBatch(items) {
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   // Handle single SR search
   if (info.menuItemId === 'middlewareLogSearch') {
-    console.log('[Middleware Log] Menu clicked, SR number:', lastValidSRNumber);
+    console.log('[Middleware Log] Menu clicked, SR number:', lastRightClick.srNumber);
 
-    if (lastValidSRNumber) {
+    if (lastRightClick.srNumber) {
       cancelSingleSR();
       cancelQueue();
 
-      const startedSrNumber = lastValidSRNumber;
-      const startedSourceTabId = sourceTabId;
-      const startedElementId = elementId;
+      const startedSrNumber = lastRightClick.srNumber;
+      const startedSourceTabId = lastRightClick.tabId;
+      const startedElementId = lastRightClick.elementId;
       // Staging SRs (> threshold) can be answered instantly via the OSD API.
       // Legacy SRs have no API and stay entirely on the tab-scrape flow.
       const useApi = parseInt(startedSrNumber, 10) > SR_THRESHOLD;
@@ -586,26 +585,12 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       const kibanaUrl = getKibanaUrl(startedSrNumber);
 
       // Immediately update Salesforce to show "Searching..." message
-      if (startedSourceTabId && startedElementId) {
-        chrome.tabs.sendMessage(startedSourceTabId, {
-          action: 'updateSRDisplay',
-          elementId: startedElementId,
-          srNumber: startedSrNumber,
-          responseBody: 'Searching in the Middleware log...'
-        }).catch(error => {
-          console.log('[Middleware Log] Failed to send searching message:', error.message);
-        });
-      }
+      paintCell(startedSourceTabId, startedElementId, startedSrNumber, 'Searching in the Middleware log...');
 
       // Fast path: populate the cell from the API while the dashboard tab loads.
       if (useApi && startedSourceTabId && startedElementId) {
         osdLookupSR(startedSrNumber).then((result) => {
-          chrome.tabs.sendMessage(startedSourceTabId, {
-            action: 'updateSRDisplay',
-            elementId: startedElementId,
-            srNumber: startedSrNumber,
-            responseBody: apiResultToText(result)
-          }).catch(() => {});
+          paintCell(startedSourceTabId, startedElementId, startedSrNumber, apiResultToText(result));
           // The cell now holds the final API result. Mark the search delivered so
           // a later cancel (re-running search) won't overwrite it with "cancelled".
           if (activeSingleSR && activeSingleSR.srNumber === startedSrNumber &&
@@ -642,7 +627,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
   // Handle "Search All" in column
   if (info.menuItemId === 'middlewareLogSearchAll') {
-    if (pendingAllItems.length === 0) {
+    if (lastRightClick.allItems.length === 0) {
       console.log('[Middleware Log] No items to process');
       return;
     }
@@ -651,6 +636,6 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     cancelQueue();
 
     // Batch runs through the OSD API directly (runApiBatch sets queue state).
-    runApiBatch([...pendingAllItems]);
+    runApiBatch([...lastRightClick.allItems], lastRightClick.tabId);
   }
 });

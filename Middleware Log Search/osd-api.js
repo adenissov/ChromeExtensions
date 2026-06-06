@@ -144,6 +144,11 @@ function firstField(hit, name) {
   return Array.isArray(v) ? v[0] : v;
 }
 
+function parseIntOrNull(v) {
+  const n = parseInt(v, 10);
+  return isNaN(n) ? null : n;
+}
+
 function buildTraceBody(traceId, fromISO, toISO) {
   return {
     params: {
@@ -228,8 +233,8 @@ async function extractErrorForTrace(traceId) {
   return null;
 }
 
-// Look up one SR and return a structured result. Replicates the row-selection
-// logic of error-trace-click.js scanAndClickFirstError against the API rows.
+// Look up one SR and return a structured result. The row-selection decision is
+// shared with error-trace-click.js via classifyStatusRows (row-classify.js).
 //   { kind: 'noRecords' }
 //   { kind: 'success', statusCode: 200|202, backend, extReqId }
 //   { kind: 'error',   statusCode, backend, responseBody }
@@ -239,42 +244,35 @@ async function osdLookupSR(srNumber) {
   const hits = (es.hits && es.hits.hits) || [];
   if (hits.length === 0) return { kind: 'noRecords' };
 
-  let maxStatus = -1;
-  for (const h of hits) {
-    const c = parseInt(firstField(h, 'HttpStatusCode'), 10);
-    if (!isNaN(c) && c > maxStatus) maxStatus = c;
-  }
-  if (maxStatus === -1) return { kind: 'noRecords' };
+  // Normalize hits (newest-first) into the shape classifyStatusRows expects.
+  const rows = hits.map(h => ({
+    statusCode: parseIntOrNull(firstField(h, 'HttpStatusCode')),
+    backend: firstField(h, 'Backend') || '',
+    extReqId: firstField(h, 'External Request ID') || '',
+    trace: firstField(h, 'Trace') || '',
+    ref: h
+  }));
 
-  // Rows arrive newest-first; reverse to scan oldest->newest like the table scrape.
-  const reversed = hits.slice().reverse();
+  const cls = classifyStatusRows(rows);
+  if (cls.kind === 'noRecords') return { kind: 'noRecords' };
 
-  if (maxStatus === 200 || maxStatus === 202) {
-    let backend = '';
-    let extReqId = '';
-    for (const h of reversed) {
-      const c = parseInt(firstField(h, 'HttpStatusCode'), 10);
-      if (maxStatus === 202) {
-        if (c !== 202) continue;
-      } else if (!firstField(h, 'Backend')) {
-        continue;
-      }
-      backend = firstField(h, 'Backend') || '';
-      extReqId = firstField(h, 'External Request ID') || '';
-      break;
-    }
-    return { kind: 'success', statusCode: maxStatus, backend, extReqId };
+  if (cls.kind === 'success') {
+    return {
+      kind: 'success',
+      statusCode: cls.statusCode,
+      backend: cls.row ? cls.row.backend : '',
+      extReqId: cls.row ? cls.row.extReqId : ''
+    };
   }
 
-  for (const h of reversed) {
-    const c = parseInt(firstField(h, 'HttpStatusCode'), 10);
-    if (!isNaN(c) && c !== 200 && c !== 202) {
-      const backend = firstField(h, 'Backend') || '';
-      const responseBody = await extractErrorForTrace(firstField(h, 'Trace'));
-      return { kind: 'error', statusCode: c, backend, responseBody: responseBody || '(no response payload in log)' };
-    }
-  }
-  return { kind: 'noRecords' };
+  // error: fetch the chosen error row's trace and pull the payload message.
+  const responseBody = await extractErrorForTrace(cls.row.trace);
+  return {
+    kind: 'error',
+    statusCode: cls.statusCode,
+    backend: cls.row.backend,
+    responseBody: responseBody || '(no response payload in log)'
+  };
 }
 
 self.osdLookupSR = osdLookupSR;

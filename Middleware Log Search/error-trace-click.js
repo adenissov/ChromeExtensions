@@ -28,8 +28,7 @@
     traceLinkSelector: 'a[href]',
     noResultsSelector: null,  // legacy empty-state DOM not verified; safety-net timeout still fires
     observerTimeout: 25000,  // keep below background queue timeout
-    noResultsStabilityMs: 3000,
-    successStatusCodes: new Set([200, 202])
+    noResultsStabilityMs: 3000
   };
 
   const STAGING_CONFIG = {
@@ -163,7 +162,31 @@
   //===========================================================================
 
   /**
-   * Analyze max status code in table and take appropriate action
+   * Normalize a DOM data row into the shape classifyStatusRows expects.
+   * Returns null for rows too short to hold the Status Code / Trace columns.
+   * @param {HTMLTableRowElement} row
+   * @param {Object} indices - Column indices from findColumnIndices
+   * @returns {Object|null} - { statusCode, backend, extReqId, trace, ref }
+   */
+  function normalizeRow(row, indices) {
+    const cells = row.querySelectorAll('td');
+    if (cells.length <= Math.max(indices.statusCodeIndex, indices.traceIndex)) return null;
+    const backend = (indices.backendIndex !== -1 && cells.length > indices.backendIndex)
+      ? parseCellText(cells[indices.backendIndex]) : '';
+    const extReqId = (indices.externalRequestIdIndex !== -1 && cells.length > indices.externalRequestIdIndex)
+      ? parseCellText(cells[indices.externalRequestIdIndex]) : '';
+    return {
+      statusCode: parseStatusCode(cells[indices.statusCodeIndex]),
+      backend,
+      extReqId,
+      trace: '',        // unused on the DOM side; we click the row's trace link via ref
+      ref: row
+    };
+  }
+
+  /**
+   * Analyze max status code in table and take appropriate action. The
+   * row-selection decision is shared with osd-api.js via classifyStatusRows.
    * @param {HTMLTableElement} table - The data table
    * @returns {boolean} - True if an error trace was clicked
    */
@@ -171,111 +194,52 @@
     const indices = findColumnIndices(table);
     if (!indices) return false;
 
-    const rows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
-
-    // Case 1: Empty table
-    if (rows.length === 0) {
+    const domRows = table.querySelectorAll(ACTIVE_CONFIG.dataRowSelector);
+    if (domRows.length === 0) {
       console.log(LOG_PREFIX, 'Table is empty - no records');
       chrome.runtime.sendMessage({ action: 'noRecordsFound' });
       return false;
     }
 
-    console.log(LOG_PREFIX, 'Scanning', rows.length, 'rows for max status code');
-
-    // Phase 1: Find max status code across ALL rows
-    let maxStatusCode = -1;
-
-    for (const row of rows) {
-      const cells = row.querySelectorAll('td');
-      if (cells.length <= Math.max(indices.statusCodeIndex, indices.traceIndex)) {
-        continue;
-      }
-      const statusCode = parseStatusCode(cells[indices.statusCodeIndex]);
-      if (statusCode !== null && statusCode > maxStatusCode) {
-        maxStatusCode = statusCode;
-      }
+    const rows = [];
+    for (const domRow of domRows) {
+      const norm = normalizeRow(domRow, indices);
+      if (norm) rows.push(norm);
     }
 
-    // No parseable status codes
-    if (maxStatusCode === -1) {
-      console.log(LOG_PREFIX, 'No parseable status codes found');
+    const cls = classifyStatusRows(rows);
+    console.log(LOG_PREFIX, 'Classified', rows.length, 'rows ->', cls.kind, 'status:', cls.statusCode);
+
+    if (cls.kind === 'noRecords') {
       chrome.runtime.sendMessage({ action: 'noRecordsFound' });
       return false;
     }
 
-    console.log(LOG_PREFIX, 'Max status code:', maxStatusCode);
-
-    // Reverse rows once for bottom-to-top scanning (reused by both success and error cases)
-    const rowsReversed = Array.from(rows).reverse();
-
-    // Case 2 & 3: Max is 200 or 202 (success)
-    if (maxStatusCode === 200 || maxStatusCode === 202) {
-      let backendValue = '';
-      let externalRequestId = '';
-
-      for (const row of rowsReversed) {
-        const cells = row.querySelectorAll('td');
-        if (cells.length <= indices.statusCodeIndex) continue;
-
-        const rowCode = parseStatusCode(cells[indices.statusCodeIndex]);
-
-        if (maxStatusCode === 202) {
-          // For 202: only use a row with status code 202
-          if (rowCode !== 202) continue;
-        } else {
-          // For 200: use first row with non-empty Backend
-          if (indices.backendIndex === -1 || cells.length <= indices.backendIndex) continue;
-          if (!parseCellText(cells[indices.backendIndex])) continue;
-        }
-
-        // Extract Backend and External Request ID from this row
-        if (indices.backendIndex !== -1 && cells.length > indices.backendIndex) {
-          backendValue = parseCellText(cells[indices.backendIndex]);
-        }
-        if (indices.externalRequestIdIndex !== -1 && cells.length > indices.externalRequestIdIndex) {
-          externalRequestId = parseCellText(cells[indices.externalRequestIdIndex]);
-        }
-        break;
-      }
-
-      const prefix = '(Backend=' + backendValue + ', Status=' + maxStatusCode + ') ';
-      const message = maxStatusCode === 200
+    if (cls.kind === 'success') {
+      const backendValue = cls.row ? cls.row.backend : '';
+      const externalRequestId = cls.row ? cls.row.extReqId : '';
+      const prefix = '(Backend=' + backendValue + ', Status=' + cls.statusCode + ') ';
+      const message = cls.statusCode === 200
         ? 'Sent request to back-end'
         : 'Back-end Id received: ' + externalRequestId;
 
-      console.log(LOG_PREFIX, 'Success result. Backend:', backendValue, 'Code:', maxStatusCode, 'ExtReqId:', externalRequestId);
+      console.log(LOG_PREFIX, 'Success result. Backend:', backendValue, 'Code:', cls.statusCode, 'ExtReqId:', externalRequestId);
       chrome.runtime.sendMessage({
         action: 'statusResult',
-        statusCode: maxStatusCode,
+        statusCode: cls.statusCode,
         displayText: prefix + message
       });
       return false;
     }
 
-    // Case 4: Max is anything else - find first non-success row bottom-to-top
-    console.log(LOG_PREFIX, 'Error detected. Scanning bottom-to-top for first non-success row');
-
-    for (const row of rowsReversed) {
-      const cells = row.querySelectorAll('td');
-      if (cells.length <= Math.max(indices.statusCodeIndex, indices.traceIndex)) {
-        continue;
-      }
-
-      const statusCode = parseStatusCode(cells[indices.statusCodeIndex]);
-
-      if (statusCode !== null && !ACTIVE_CONFIG.successStatusCodes.has(statusCode)) {
-        const backendValue = (indices.backendIndex !== -1 && cells.length > indices.backendIndex)
-          ? parseCellText(cells[indices.backendIndex])
-          : '';
-        console.log(LOG_PREFIX, 'Found non-success status:', statusCode, 'backend:', backendValue);
-        if (clickTraceLink(cells[indices.traceIndex], statusCode, backendValue)) {
-          return true;
-        }
-      }
+    // Error: click the chosen (oldest) non-success row's Trace link.
+    const traceCell = cls.row.ref.querySelectorAll('td')[indices.traceIndex];
+    console.log(LOG_PREFIX, 'Found non-success status:', cls.statusCode, 'backend:', cls.row.backend);
+    if (traceCell && clickTraceLink(traceCell, cls.statusCode, cls.row.backend)) {
+      return true;
     }
 
-    // Fallback: shouldn't reach here if max is not in success set
-    console.log(LOG_PREFIX, 'No non-success rows found (unexpected)');
+    console.log(LOG_PREFIX, 'No clickable trace link on the error row - reporting no records');
     chrome.runtime.sendMessage({ action: 'noRecordsFound' });
     return false;
   }

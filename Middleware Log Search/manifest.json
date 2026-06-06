@@ -28,7 +28,7 @@
         "*://portal.cc.toronto.ca/*",
         "*://staging.cc.toronto.ca/*"
       ],
-      "js": ["error-trace-click.js"],
+      "js": ["row-classify.js", "error-trace-click.js"],
       "run_at": "document_idle",
       "all_frames": true
     }
