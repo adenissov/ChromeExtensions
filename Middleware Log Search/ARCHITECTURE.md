@@ -11,6 +11,7 @@ This document explains *why* the extension is structured the way it is. For user
 | `manifest.json` | — | MV3 manifest, host permissions, content-script matchers |
 | `background.js` | Service worker | Context menu, tab orchestration, queue, API/tab mode routing, message routing |
 | `osd-api.js` | Service worker (`importScripts`) | Query the staging OSD search API directly; replicate the table/trace result logic server-side |
+| `row-classify.js` | Service worker (`importScripts`) **and** the Kibana/OSD pages (content script) | Pure `classifyStatusRows(rows)` — the single shared "which row wins, success or error?" decision (§4) |
 | `content.js` | Salesforce (`*.salesforce.com`, `*.force.com`, `*.lightning.force.com`) | SR validation on right-click, in-place display update + persistence across row re-render, table reflow |
 | `error-trace-click.js` | Kibana (`portal.cc.toronto.ca`) and OSD staging (`staging.cc.toronto.ca`), restricted to ports `5601` and `15601` | Find the most-recent error row, click its Trace link |
 | `jaeger-expand.js` | All URLs (filtered internally) | Extract error message from the trace page; auto-scroll |
@@ -71,6 +72,29 @@ The spread + selective overrides keep the **only** five fields that actually dif
 
 The port-based switch is the simplest reliable signal — the two dashboards are on different ports of unrelated hosts.
 
+**Row selection is *not* in this file.** Once `error-trace-click.js` has scraped the rows, the "which row wins — success or error?" decision is delegated to `classifyStatusRows` in `row-classify.js` (§4a), the same function the API path uses. This file only handles DOM scraping and the resulting click; it normalizes each scraped row to the shared shape before calling.
+
+---
+
+## 4a. Shared row classification (`row-classify.js`)
+
+The exact same rule — *given all log rows for an SR, decide whether it succeeded and which row to report* — is needed by two callers that get their rows from completely different places:
+
+- `error-trace-click.js` scrapes rows out of the dashboard **DOM**;
+- `osd-api.js` (`osdLookupSR`) gets rows as **JSON hits** from the search API (§13).
+
+To stop the rule from drifting between them, it lives once as the pure function `classifyStatusRows(rows)` in `row-classify.js`, loaded into **both** contexts (content-script entry in the manifest **and** `importScripts` in the worker — listed *before* the files that call it).
+
+**Contract.** Each caller normalizes its rows, newest-first, to `{ statusCode, backend, extReqId, trace, ref }` (`ref` is the original DOM node or hit, so the caller can act on the chosen row). `classifyStatusRows` returns one of:
+
+```
+{ kind: 'noRecords' }
+{ kind: 'success', statusCode, row }   // 200 or 202
+{ kind: 'error',   statusCode, row }
+```
+
+Rule: take the **max status code** across rows; `200`/`202` → success (a `202` picks the oldest `202`; a `200` picks the oldest row with a non-empty backend); otherwise → error (the oldest non-success row). The two callers then *act* differently on the result — `error-trace-click.js` clicks the chosen error row's Trace cell, `osd-api.js` fetches that row's trace over the API — but the **decision** is identical.
+
 ---
 
 ## 5. Two trace-page extraction paths in one file
@@ -107,6 +131,8 @@ Polling on a fixed interval would either be slow (long interval) or wasteful (sh
 | 10 s | `jaeger-expand.js` "no records" fallback | Only fires when `extractionAttempts > 0` or it's a Jaeger page — see §8 |
 | **30 s** | `background.js` per-item batch timeout | Was 12 s. Chrome throttles background tabs, and OSD is heavy to render — 12 s timed out spuriously |
 | 5 min | `jaeger-expand.js` observer disconnect | Hard cap; user might leave the tab |
+
+In `jaeger-expand.js` these and the smaller delays are not scattered literals — they live in one named `TIMERS` block at the top of the file (`OBSERVER_DISCONNECT_MS`, `INNER_SCROLL_CAP_MS`, `EXTRACT_AFTER_ACCORDION_MS`, etc.). Tune timing there, not inline.
 
 **Single-SR mode has *no* per-item timeout** — opening the tab and waiting for whatever comes back. There's no queue advancing behind it, so a slow load just means a longer wait.
 
@@ -159,7 +185,7 @@ What worked: add a CSS class to **five levels** of parent elements. The class ov
 
 ## 11. Manifest V3 service-worker liveness
 
-The background script in MV3 is a non-persistent service worker. In-memory state (`lastValidSRNumber`, `sourceTabId`, queue state) is lost when the worker idles out. We accept this because:
+The background script in MV3 is a non-persistent service worker. In-memory state (`lastRightClick`, `activeSingleSR`, queue state) is lost when the worker idles out. We accept this because:
 
 - **Single-SR mode** tolerates a worker restart between right-click and menu-click. If it happens, the right-click's `updateMenuState` message gets a "port closed" failure (logged but harmless) and the user re-issues the action.
 - **Batch mode** keeps the worker alive by having continuous activity (open tab, listen for message, open next tab). The worker doesn't idle out mid-queue.
@@ -178,6 +204,7 @@ API-mode batch (§13) is a single `async` function awaiting sequential `fetch`es
 - **`findErrorMessageDeep`** returns the first match in DFS order. Backends with multiple errors only get the first one reported.
 - **Service-worker restart** during single-SR mode produces a "message port closed" warning in the Salesforce console; this is informational, not an error.
 - **API batch mode (§13) is staging-only and not threshold-gated.** It runs *every* SR through the staging API. This is safe today because legacy SRs (≤ threshold) never appear in a batch — they predate the dashboard. If a legacy SR ever ended up in a batch, it would wrongly come back "No records" instead of falling back to the legacy tab flow.
+- **The far-left grid row-number gutter doesn't height-sync with expanded cells.** The Salesforce report renders the row-number gutter as a *separate* frozen column. When an expanded Request-Number cell grows tall (§14), its data row grows but the gutter's matching cell does not, so the row numbers drift out of alignment. The gutter is not reachable by the row-level CSS in §10/§14. Open; not yet fixed (candidate fixes: hide the gutter, or target it directly once its DOM is known).
 
 ---
 
@@ -197,7 +224,7 @@ fetch('https://staging.cc.toronto.ca:15601/internal/search/opensearch', {
 
 **Why this works without an API key:** the user is already logged into the dashboard, so the session cookie authenticates the request. `host_permissions: ["<all_urls>"]` lets the service worker send it cross-origin with credentials. No new permission, no key, no token handling.
 
-**Faithful replication, not a new query.** The request body (`buildSearchBody`) and the painless `script_fields` (Trace, HttpStatusCode, Backend, External/Request IDs) are copied **verbatim** from a real dashboard search captured in DevTools, so the API returns the exact column values the scraped table used to show. `osdLookupSR` then replicates `error-trace-click.js`'s row-selection logic against those rows (max status across rows; 200/202 → success; otherwise fetch the error row's trace and pull the `response.payload` error message via the same `findErrorMessageDeep` walker as `jaeger-expand.js`, §5).
+**Faithful replication, not a new query.** The request body (`buildSearchBody`) and the painless `script_fields` (Trace, HttpStatusCode, Backend, External/Request IDs) are copied **verbatim** from a real dashboard search captured in DevTools, so the API returns the exact column values the scraped table used to show. `osdLookupSR` normalizes the hits and runs them through the **shared** `classifyStatusRows` (§4a) — the same decision `error-trace-click.js` uses — then, on an error verdict, fetches that row's trace and pulls the `response.payload` error message via the same `findErrorMessageDeep` walker as `jaeger-expand.js` (§5).
 
 **Where it's used (`useApi = srNumber > SR_THRESHOLD`):**
 - **Batch** — fully API; no tabs opened. A single `runApiBatch` awaits each SR sequentially.
@@ -217,8 +244,28 @@ Salesforce Lightning **virtualizes list rows**: a row scrolled out of the viewpo
 1. Every `updateSRDisplay` result is stored in a `Map` keyed by **SR number** (not by the fragile `data-mwlog-id`, which the recycle wipes).
 2. A `MutationObserver` watches `document.body` for re-renders. On a mutation it re-paints any on-screen SR link whose text doesn't match its stored result — identifying rows by the **leading SR token** in the link text, which is stable whether the node is fresh (`09396684`) or already painted (`09396684 - 200 OK`).
 
-**Two guards keep it from fighting Salesforce:**
-- The re-paint is debounced to fire only after the DOM has been **quiet for 200 ms** (`REAPPLY_QUIET_MS`), not per animation frame. Per-frame re-painting raced Salesforce's own row rendering at the bottom of long lists and flickered.
-- The `resize` reflow (§10) is dispatched **only on first paint**, not on re-paints — the resize event itself nudges Salesforce to re-render, which would re-trigger the observer.
+**Guards that keep it from fighting Salesforce** (each one was added to kill a specific flicker/miss observed in testing):
+- The re-paint is debounced to fire only after the DOM has been **quiet for 200 ms** (`REAPPLY_QUIET_MS`), not per animation frame, and there is **no `scroll` listener**. An earlier version re-painted during active scrolling, which at the very bottom of a long list fed a loop (scroll nudges the pinned bottom → re-paint grows a cell → nudges again) and flickered. Re-painting only at rest breaks the loop.
+- The observer watches `{ childList, subtree, characterData }`. **`characterData` is required**: Salesforce sometimes recycles a row by rewriting the existing text node rather than replacing the node, which a `childList`-only observer misses — that was the cause of a few rows at the top of the list scrolling back into view still un-appended.
+- `reapplyStoredResults` **disconnects the observer while it writes**, then `takeRecords()` + re-observes, so its own paints can't re-trigger it.
+- The `resize` reflow (§10) is dispatched **only on first paint**, not on re-paints, and is itself coalesced (a `pendingResizeReflow` flag + one rAF) — the resize event nudges Salesforce to re-render, which would otherwise re-trigger the observer.
 
 Together with the text-equality skip in the scan (don't rewrite a link that's already correct), the loop settles after one quiet re-paint.
+
+**Cell height is capped (§10 CSS).** A tall result (multi-line error payloads ran ~25 lines) is clamped to ~10 lines with an internal scrollbar (`.mwlog-expanded-cell a { max-height: 14em; overflow-y: auto }`). This is not only cosmetic: uncapped, a very tall cell pushed earlier rows off the top of the viewport where they never got appended, and variable row heights worsened the scroll feedback loop above. The unclamp rules and the cap live on different specificities on purpose — the `*` rule defeats Salesforce's own line-clamp (it needs all of `overflow:visible; height:auto; max-height:none`, or Salesforce's wrapper squashes the cell back to one line), while the higher-specificity `a` rule re-imposes our 10-line cap.
+
+---
+
+## 15. Cell-paint routing (`background.js`)
+
+Every visible result in a Salesforce cell is written by exactly one function:
+
+```js
+paintCell(tabId, elementId, srNumber, text, isSearching = false)
+```
+
+`paintCell` is the **single choke point** — it builds the `updateSRDisplay` message, sends it to the Salesforce tab, and logs on skip/failure. The three "⟳ Searching…" spinners and every final verdict all go through it (with `isSearching` as an explicit boolean, *not* by sniffing the text for the word "Searching"). Centralizing it means there's one place to change the message shape, and one place that logs why a paint didn't land.
+
+**Routing a reply to the right cell.** Tab-scrape replies (`statusResult`, `noRecordsFound`, `responseBodyExtracted`) arrive from a Kibana/Jaeger tab and must be mapped back to the cell that asked for them. `resolveReplyTarget(senderTabId)` is the one resolver: it matches the sending tab against `activeSingleSR`'s kibana/jaeger tab ids or the current queue item, and returns `{ tabId, elementId, srNumber }` — or `null`, in which case the reply is **dropped and logged** rather than painted into whatever cell happens to be current. This replaced a set of loose globals (`lastValidSRNumber`/`sourceTabId`/`elementId`) that any handler could overwrite; right-click context now lives in one `lastRightClick = { tabId, srNumber, elementId, allItems }` object, batch source in `batchSourceTabId`.
+
+**`resultDelivered` — don't cancel a finished search.** In the API fast-path a staging single-SR fills its cell instantly but keeps its dashboard/Trace tabs open (§13). `activeSingleSR` therefore lingers after the answer is already shown. Without a guard, the *next* search's `cancelSingleSR()` would paint "Search cancelled" over the completed text. `activeSingleSR.resultDelivered` is set `true` once the API paints the final result, and `cancelSingleSR()` only writes "Search cancelled" when `!resultDelivered` — a finished search is left intact; only a genuinely in-flight one is cancellable.
