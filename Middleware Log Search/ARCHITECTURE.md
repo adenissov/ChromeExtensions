@@ -85,7 +85,7 @@ Rule: take the **max status code** across rows; `200`/`202` → success (a `202`
 
 ## 5. Two trace-page extraction paths in one file
 
-The legacy stack drops the user into a Jaeger UI; the new stack drops them into a ByteStream O11Y panel page. `jaeger-expand.js` runs on both and tries each in turn:
+The current stack drops the user into a ByteStream O11Y panel page; the retired legacy stack used a Jaeger UI. `jaeger-expand.js` still handles **both** and tries each in turn — the ByteStream path is the live one, the Jaeger path is kept for an old trace opened by hand (§3):
 
 ```js
 const responseBody = extractResponseBody()             // Jaeger KeyValueTable
@@ -166,7 +166,7 @@ What worked: add a CSS class to **five levels** of parent elements. The class ov
 
 ## 11. Manifest V3 service-worker liveness
 
-The background script in MV3 is a non-persistent service worker. In-memory state (`lastRightClick`, `activeSingleSR`, queue state) is lost when the worker idles out. We accept this because:
+The background script in MV3 is a non-persistent service worker. In-memory state (`lastRightClick`, `activeSingleSR`, batch state) is lost when the worker idles out. We accept this because:
 
 - **Single-SR mode** tolerates a worker restart between right-click and menu-click. If it happens, the right-click's `updateMenuState` message gets a "port closed" failure (logged but harmless) and the user re-issues the action.
 - **Batch mode** (§13) is a single `async` function (`runApiBatch`) awaiting sequential `fetch`es; the in-flight `await` keeps the worker alive, and a generation token (`apiBatchId`) cancels it if a new search starts.
@@ -242,9 +242,9 @@ paintCell(tabId, elementId, srNumber, text, isSearching = false)
 
 `paintCell` is the **single choke point** — it builds the `updateSRDisplay` message, sends it to the Salesforce tab, and logs on skip/failure. The three "⟳ Searching…" spinners and every final verdict all go through it (with `isSearching` as an explicit boolean, *not* by sniffing the text for the word "Searching"). Centralizing it means there's one place to change the message shape, and one place that logs why a paint didn't land.
 
-**Routing a reply to the right cell.** Tab-scrape replies (`statusResult`, `noRecordsFound`, `responseBodyExtracted`) arrive from a Kibana/Jaeger tab and must be mapped back to the cell that asked for them. `resolveReplyTarget(senderTabId)` is the one resolver: it matches the sending tab against `activeSingleSR`'s kibana/jaeger tab ids or the current queue item, and returns `{ tabId, elementId, srNumber }` — or `null`, in which case the reply is **dropped and logged** rather than painted into whatever cell happens to be current. This replaced a set of loose globals (`lastValidSRNumber`/`sourceTabId`/`elementId`) that any handler could overwrite; right-click context now lives in one `lastRightClick = { tabId, srNumber, elementId, allItems }` object, batch source in `batchSourceTabId`.
+**Routing a reply to the right cell.** Tab-scrape replies (`statusResult`, `noRecordsFound`, `responseBodyExtracted`) arrive from the single-SR dashboard/trace tab and must be mapped back to the cell that asked for them. `resolveReplyTarget(senderTabId)` is the one resolver: it matches the sending tab against `activeSingleSR`'s dashboard/trace tab ids (`kibanaTabId`/`jaegerTabId`) and returns `{ tabId, elementId, srNumber }` — or `null`, in which case the reply is **dropped and logged** rather than painted into whatever cell happens to be current. (Batch mode is API-only and opens no tabs, so it has no reply to route.) This replaced a set of loose globals (`lastValidSRNumber`/`sourceTabId`/`elementId`) that any handler could overwrite; right-click context now lives in one `lastRightClick = { tabId, srNumber, elementId, allItems }` object, batch source in `batchSourceTabId`.
 
 **`resultDelivered` — don't overwrite or cancel a finished search.** In the API fast-path a staging single-SR fills its cell instantly but keeps its dashboard/Trace tabs open (§13). `activeSingleSR` therefore lingers after the answer is already shown, and those tabs' own `error-trace-click.js` / `jaeger-expand.js` still send `statusResult` / `noRecordsFound` / `responseBodyExtracted` replies. `activeSingleSR.resultDelivered` is set `true` once the API paints the final result, and it guards two places:
 
-- `updateSRDisplay()` drops a tab-scrape reply for a `resultDelivered` single-SR instead of painting it — otherwise the slow, throttled dashboard render (the very thing the API path exists to avoid) could overwrite the correct API answer, e.g. a sluggish dashboard firing "No records" over a real API error. While `resultDelivered` is still `false` (API pending, or it threw), the tab scrape *does* paint, so it remains the fallback it always was for legacy SRs.
+- `updateSRDisplay()` drops a tab-scrape reply for a `resultDelivered` single-SR instead of painting it — otherwise the slow, throttled dashboard render (the very thing the API path exists to avoid) could overwrite the correct API answer, e.g. a sluggish dashboard firing "No records" over a real API error. While `resultDelivered` is still `false` (API pending, or the `fetch` threw), the tab scrape *does* paint, so it stays the fallback for when the API call fails.
 - `cancelSingleSR()` only writes "Search cancelled" when `!resultDelivered`, so the *next* search can't paint "cancelled" over the completed text — a finished search is left intact; only a genuinely in-flight one is cancellable.
