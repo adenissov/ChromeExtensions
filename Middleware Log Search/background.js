@@ -340,7 +340,10 @@ function cancelSingleSR() {
   if (activeSingleSR.kibanaTabId) cancelledTabIds.add(activeSingleSR.kibanaTabId);
   if (activeSingleSR.jaegerTabId) cancelledTabIds.add(activeSingleSR.jaegerTabId);
 
-  if (activeSingleSR.sourceTabId) {
+  // Only paint "Search cancelled" if the search was genuinely still in flight.
+  // In API mode the cell already holds the final result (resultDelivered) even
+  // though the dashboard tab lingers — don't clobber it.
+  if (activeSingleSR.sourceTabId && !activeSingleSR.resultDelivered) {
     chrome.tabs.sendMessage(activeSingleSR.sourceTabId, {
       action: 'updateSRDisplay',
       elementId: activeSingleSR.elementId,
@@ -603,6 +606,12 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
             srNumber: startedSrNumber,
             responseBody: apiResultToText(result)
           }).catch(() => {});
+          // The cell now holds the final API result. Mark the search delivered so
+          // a later cancel (re-running search) won't overwrite it with "cancelled".
+          if (activeSingleSR && activeSingleSR.srNumber === startedSrNumber &&
+              activeSingleSR.elementId === startedElementId) {
+            activeSingleSR.resultDelivered = true;
+          }
         }).catch((e) => {
           console.log('[Middleware Log] Single-SR API lookup failed:', e.message);
         });
@@ -621,7 +630,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
           kibanaTabId: tab.id,
           jaegerTabId: null,
           traceTimeoutId: null,
-          apiMode: useApi
+          apiMode: useApi,
+          resultDelivered: false
         };
       });
       console.log('[Middleware Log] Opening Kibana URL for SR:', startedSrNumber, useApi ? '(API fast-path)' : '(legacy)');
