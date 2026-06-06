@@ -27,7 +27,7 @@ let elementIdCounter = 0;
 const resultsBySR = new Map();  // srNumber -> { srNumber, responseBody, isSearching }
 let reapplyObserver = null;
 let reapplyTimer = null;
-const REAPPLY_QUIET_MS = 200;  // wait for the DOM to settle, so we don't fight Salesforce mid-render
+const REAPPLY_QUIET_MS = 200;  // repaint only once the DOM/scroll has gone quiet (never mid-scroll)
 
 //=============================================================================
 // MESSAGE LISTENER FOR SR DISPLAY UPDATES
@@ -41,21 +41,44 @@ function injectStyles() {
 
   const style = document.createElement('style');
   style.textContent = `
+    /* Unclamp the cell and every wrapper Salesforce puts around the link
+       (it otherwise truncates the text to one line via an overflow-hidden,
+       fixed-height span). */
     .mwlog-expanded-cell,
     .mwlog-expanded-cell * {
       white-space: pre-wrap !important;
-      overflow: visible !important;
-      height: auto !important;
-      max-height: none !important;
       word-wrap: break-word !important;
       text-overflow: clip !important;
       line-clamp: unset !important;
       -webkit-line-clamp: unset !important;
+      overflow: visible !important;
+      height: auto !important;
+      max-height: none !important;
+    }
+    /* Cap the message itself at ~10 lines and scroll longer ones inside the
+       link. Higher specificity than the rule above, so it wins for the <a>.
+       Bounding the height keeps Salesforce's virtual-scroller row heights in a
+       stable band, which stops the relayout/blink fight and lets the re-apply
+       observer settle (ARCH §10, §14). */
+    .mwlog-expanded-cell a {
+      display: inline-block !important;
+      max-width: 100% !important;
+      max-height: 14em !important;   /* ~10 lines at line-height 1.4 */
+      overflow-y: auto !important;
+      line-height: 1.4 !important;
+      vertical-align: top !important;
     }
     tr:has(.mwlog-expanded-cell) {
       height: auto !important;
       max-height: none !important;
       overflow: visible !important;
+    }
+    /* Top-align every cell in an expanded row so the left-column row number
+       (and the other columns) line up with the first line of the appended
+       message, instead of floating in the vertical middle of a now-tall row. */
+    tr:has(.mwlog-expanded-cell) > td,
+    tr:has(.mwlog-expanded-cell) > th {
+      vertical-align: top !important;
     }
     /* Allow table and its containers to grow */
     table:has(.mwlog-expanded-cell),
@@ -166,6 +189,10 @@ function expectedDisplayText(srNumber, responseBody, isSearching) {
 function reapplyStoredResults() {
   if (resultsBySR.size === 0) return;
 
+  // Pause observation while we write: our own text/class edits would otherwise
+  // re-trigger the observer and schedule yet another reapply, feeding the churn.
+  if (reapplyObserver) reapplyObserver.disconnect();
+
   const links = document.querySelectorAll('table a');
   for (const link of links) {
     const text = link.textContent.trim();
@@ -180,11 +207,17 @@ function reapplyStoredResults() {
     }
     applyDisplay(link, stored.srNumber, stored.responseBody, stored.isSearching, false);
   }
+
+  if (reapplyObserver) {
+    reapplyObserver.takeRecords();  // drop the records our own writes just produced
+    observeForReapply();
+  }
 }
 
-// Re-paint only after the DOM has been quiet for REAPPLY_QUIET_MS. A trailing
-// debounce (not per-frame) keeps us from fighting Salesforce while it re-renders
-// rows during a scroll, which otherwise flickers.
+// Trailing debounce: repaint only after the DOM and scrolling have been quiet
+// for REAPPLY_QUIET_MS. Repainting *during* an active scroll fights Salesforce's
+// virtual scroller (which is mid-recycle) and flickers — especially at the
+// bottom of a list of tall cells. Waiting for quiet avoids that fight.
 function scheduleReapply() {
   if (reapplyTimer) clearTimeout(reapplyTimer);
   reapplyTimer = setTimeout(() => {
@@ -197,7 +230,16 @@ function scheduleReapply() {
 function ensureReapplyObserver() {
   if (reapplyObserver) return;
   reapplyObserver = new MutationObserver(scheduleReapply);
-  reapplyObserver.observe(document.body, { childList: true, subtree: true });
+  observeForReapply();
+}
+
+function observeForReapply() {
+  // characterData: Salesforce often recycles a row by rewriting its existing
+  // text node rather than replacing the element — a childList-only observer
+  // misses that, leaving the row bare. We deliberately do NOT listen to
+  // 'scroll': repainting mid-scroll re-grows cells at the very bottom (where the
+  // browser keeps nudging the scroll to stay pinned) and that drives the blink.
+  reapplyObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
 
 //=============================================================================
@@ -375,6 +417,7 @@ function parseCreatedDateTime(text) {
  * Trigger Salesforce table reflow after content update.
  * Adds classes to parent containers to allow them to grow with expanded content.
  */
+let pendingResizeReflow = false;
 function triggerSalesforceTableReflow(tableElement) {
   if (!tableElement) return;
 
@@ -386,10 +429,15 @@ function triggerSalesforceTableReflow(tableElement) {
     parent = parent.parentElement;
   }
 
-  // Dispatch window resize event as well
-  requestAnimationFrame(() => {
-    window.dispatchEvent(new Event('resize'));
-  });
+  // Nudge Salesforce to relayout. Coalesce to one dispatch per frame so a fast
+  // batch of results doesn't fire N resizes (each of which thrashes the scroller).
+  if (!pendingResizeReflow) {
+    pendingResizeReflow = true;
+    requestAnimationFrame(() => {
+      pendingResizeReflow = false;
+      window.dispatchEvent(new Event('resize'));
+    });
+  }
 }
 
 /**
