@@ -21,6 +21,20 @@
   let innerScrollDone = false;
   const MAX_EXTRACTION_ATTEMPTS = 5;
 
+  // All delays in one place (the orchestration is timer-driven; see setupObserver).
+  const TIMERS = {
+    SPAN_BAR_DELAY_MS: 500,          // wait for virtualized span rows before expanding
+    SCROLL_INITIAL_MS: 500,          // first ByteStream scroll attempt
+    EXTRACT_AFTER_ACCORDION_MS: 300, // extract after Logs accordions expand
+    EXTRACT_RETRY_MS: 500,           // retry gap between extraction attempts
+    INNER_SCROLL_CAP_MS: 5000,       // stop waiting for the "events" line
+    EXTRACT_DELAY_LOG_MS: 10000,     // log a diagnostic if nothing extracted yet
+    OBSERVER_DISCONNECT_MS: 300000,  // hard cap: stop observing after 5 min
+    ACCORDION_SETTLE_MS: 100,        // let the DOM settle after a new accordion appears
+    MUTATION_EXTRACT_MS: 200,        // extract shortly after relevant nodes appear
+    MUTATION_SCROLL_MS: 200          // scroll shortly after relevant nodes appear
+  };
+
   /**
    * Check if current page is a Jaeger trace page
    * @returns {boolean} True if on a Jaeger page
@@ -52,14 +66,12 @@
     if (!rawValue) return rawValue;
 
     try {
-      const parsed = JSON.parse(rawValue);
-      // Check for errorInfo array with errorMessage
-      if (parsed.errorInfo && Array.isArray(parsed.errorInfo) && parsed.errorInfo.length > 0) {
-        const errorMessage = parsed.errorInfo[0].errorMessage;
-        if (errorMessage) {
-          console.log('[Middleware Log] Extracted errorMessage from JSON:', errorMessage);
-          return errorMessage;
-        }
+      // Same recursive search as the ByteStream path, so both backends behave
+      // alike (covers {errorInfo:[{errorMessage}]}, {error:{errorMessage}}, etc.).
+      const errorMessage = findErrorMessageDeep(JSON.parse(rawValue));
+      if (errorMessage) {
+        console.log('[Middleware Log] Extracted errorMessage from JSON:', errorMessage);
+        return errorMessage;
       }
     } catch (e) {
       // Not JSON, return as-is
@@ -205,8 +217,8 @@
     if (!pageScrollDone) {
       panel.scrollIntoView({ block: 'start' });
       pageScrollDone = true;
-      // Bound the wait for "events": stop retrying after 5 s
-      setTimeout(() => { innerScrollDone = true; }, 5000);
+      // Bound the wait for "events": stop retrying after the cap
+      setTimeout(() => { innerScrollDone = true; }, TIMERS.INNER_SCROLL_CAP_MS);
     }
 
     if (innerScrollDone) return;
@@ -252,7 +264,7 @@
       sendResponseBodyToBackground(responseBody);
     } else if (extractionAttempts < MAX_EXTRACTION_ATTEMPTS) {
       // Retry after delay
-      setTimeout(attemptExtraction, 500);
+      setTimeout(attemptExtraction, TIMERS.EXTRACT_RETRY_MS);
     } else {
       console.log('[Middleware Log] Response body not found after', MAX_EXTRACTION_ATTEMPTS, 'attempts');
       // Do not report "No records" from a trace page. The dashboard page is
@@ -327,7 +339,7 @@
     }
 
     // Attempt to extract response body after accordions expand
-    setTimeout(attemptExtraction, 300);
+    setTimeout(attemptExtraction, TIMERS.EXTRACT_AFTER_ACCORDION_MS);
   }
 
   /**
@@ -339,10 +351,10 @@
     // Try to expand span bar after a short delay (wait for virtualized content)
     setTimeout(() => {
       expandSpanBar();
-    }, 500);
+    }, TIMERS.SPAN_BAR_DELAY_MS);
 
     // Initial attempt at ByteStream scroll (in case content is already rendered)
-    setTimeout(performByteStreamScroll, 500);
+    setTimeout(performByteStreamScroll, TIMERS.SCROLL_INITIAL_MS);
 
     // After 10 seconds, log extraction diagnostics but do not send a no-records
     // result. Trace pages can have real records even when payload extraction
@@ -354,7 +366,7 @@
           console.log('[Middleware Log] Trace payload not extracted after 10 seconds; leaving result to background timeout. Attempts:', extractionAttempts);
         }
       }
-    }, 10000);
+    }, TIMERS.EXTRACT_DELAY_LOG_MS);
 
     const observer = new MutationObserver((mutations) => {
       // Try to expand span bar if not yet done
@@ -389,12 +401,12 @@
 
       if (hasNewAccordion) {
         // Small delay to let the DOM settle
-        setTimeout(expandLogsAccordions, 100);
+        setTimeout(expandLogsAccordions, TIMERS.ACCORDION_SETTLE_MS);
       }
 
       if (shouldAttemptExtraction) {
-        if (!responseBodyExtracted) setTimeout(attemptExtraction, 200);
-        if (!innerScrollDone) setTimeout(performByteStreamScroll, 200);
+        if (!responseBodyExtracted) setTimeout(attemptExtraction, TIMERS.MUTATION_EXTRACT_MS);
+        if (!innerScrollDone) setTimeout(performByteStreamScroll, TIMERS.MUTATION_SCROLL_MS);
       }
     });
 
@@ -404,11 +416,11 @@
       subtree: true
     });
 
-    // Stop observing after 5 minutes
+    // Stop observing after the hard cap
     setTimeout(() => {
       observer.disconnect();
       console.log('[Middleware Log] Observer disconnected after timeout');
-    }, 300000);
+    }, TIMERS.OBSERVER_DISCONNECT_MS);
   }
 
   // Run when DOM is ready

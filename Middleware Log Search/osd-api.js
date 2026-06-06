@@ -6,6 +6,12 @@
 const OSD_SEARCH_URL = 'https://staging.cc.toronto.ca:15601/internal/search/opensearch';
 const OSD_INDEX = 'otel-v1-apm-span-*';
 const OSD_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+const OSD_VERSION = '2.19.0';  // version-specific; an OSD upgrade may require updating this
+const OSD_HEADERS = {
+  'content-type': 'application/json',
+  'osd-version': OSD_VERSION,
+  'osd-xsrf': 'osd-fetch'
+};
 
 // Painless scripts copied verbatim from the dashboard's search request, so the API
 // returns the exact column values the scraped table used to show.
@@ -117,26 +123,30 @@ function buildSearchBody(srNumber, fromISO, toISO) {
   };
 }
 
-async function osdSearchBySR(srNumber) {
+// [from, to] lookback window as ISO strings for a query body.
+function lookbackWindow() {
   const to = new Date();
   const from = new Date(to.getTime() - OSD_LOOKBACK_MS);
-  const body = buildSearchBody(srNumber, from.toISOString(), to.toISOString());
+  return { fromISO: from.toISOString(), toISO: to.toISOString() };
+}
 
+// POST a search body to the OSD endpoint using the logged-in session cookie.
+async function osdSearch(body, label) {
   const resp = await fetch(OSD_SEARCH_URL, {
     method: 'POST',
     credentials: 'include',
-    headers: {
-      'content-type': 'application/json',
-      'osd-version': '2.19.0',
-      'osd-xsrf': 'osd-fetch'
-    },
+    headers: OSD_HEADERS,
     body: JSON.stringify(body)
   });
-
   if (!resp.ok) {
-    throw new Error('OSD search HTTP ' + resp.status + ' ' + resp.statusText);
+    throw new Error((label || 'OSD search') + ' HTTP ' + resp.status + ' ' + resp.statusText);
   }
   return resp.json();
+}
+
+async function osdSearchBySR(srNumber) {
+  const { fromISO, toISO } = lookbackWindow();
+  return osdSearch(buildSearchBody(srNumber, fromISO, toISO), 'OSD search');
 }
 
 function firstField(hit, name) {
@@ -171,17 +181,8 @@ function buildTraceBody(traceId, fromISO, toISO) {
 }
 
 async function osdSearchByTrace(traceId) {
-  const to = new Date();
-  const from = new Date(to.getTime() - OSD_LOOKBACK_MS);
-  const body = buildTraceBody(traceId, from.toISOString(), to.toISOString());
-  const resp = await fetch(OSD_SEARCH_URL, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'content-type': 'application/json', 'osd-version': '2.19.0', 'osd-xsrf': 'osd-fetch' },
-    body: JSON.stringify(body)
-  });
-  if (!resp.ok) throw new Error('OSD trace search HTTP ' + resp.status + ' ' + resp.statusText);
-  return resp.json();
+  const { fromISO, toISO } = lookbackWindow();
+  return osdSearch(buildTraceBody(traceId, fromISO, toISO), 'OSD trace search');
 }
 
 // Recursively find the first non-empty "errorMessage" string (DFS).

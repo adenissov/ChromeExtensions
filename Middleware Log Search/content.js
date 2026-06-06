@@ -21,9 +21,18 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 let lastSRNumber = null;
 let elementIdCounter = 0;
 
+/** The SR token of a cell: the text before the first space (or the whole text). */
+function srTokenOf(text) {
+  const trimmed = (text || '').trim();
+  const spaceIndex = trimmed.indexOf(' ');
+  return spaceIndex !== -1 ? trimmed.substring(0, spaceIndex) : trimmed;
+}
+
 // Salesforce Lightning virtualizes list rows: a row scrolled out of view is
 // recycled/re-rendered, wiping the text we injected (and its data-mwlog-id).
 // Keep the last result per SR number and re-apply it whenever rows re-render.
+// Grows by one entry per searched SR for the life of the page (cleared on
+// reload); fine for a session — cap it here if very long sessions ever bloat it.
 const resultsBySR = new Map();  // srNumber -> { srNumber, responseBody, isSearching }
 let reapplyObserver = null;
 let reapplyTimer = null;
@@ -124,7 +133,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     }
 
-    const isSearching = responseBody.includes('Searching');
+    const isSearching = !!message.isSearching;
 
     // Remember the result so it survives Lightning recycling the row's DOM.
     resultsBySR.set(message.srNumber, { srNumber: message.srNumber, responseBody, isSearching });
@@ -195,9 +204,7 @@ function reapplyStoredResults() {
 
   const links = document.querySelectorAll('table a');
   for (const link of links) {
-    const text = link.textContent.trim();
-    const spaceIndex = text.indexOf(' ');
-    const token = spaceIndex !== -1 ? text.substring(0, spaceIndex) : text;
+    const token = srTokenOf(link.textContent);
 
     const stored = resultsBySR.get(token);
     if (!stored) continue;
@@ -259,12 +266,8 @@ function extractSRNumber(element) {
     return null;
   }
 
-  // Get the link text
-  const linkText = link.textContent.trim();
-
   // Extract value to validate: text before first space, or whole text if no space
-  const spaceIndex = linkText.indexOf(' ');
-  const valueToValidate = spaceIndex !== -1 ? linkText.substring(0, spaceIndex) : linkText;
+  const valueToValidate = srTokenOf(link.textContent);
 
   // Validate it's an 8-9 digit number
   if (!SR_NUMBER_PATTERN.test(valueToValidate)) {
@@ -333,9 +336,7 @@ function collectAllSRNumbers(clickedElement) {
     if (!link) continue;
 
     // Extract SR number using existing logic
-    const linkText = link.textContent.trim();
-    const spaceIndex = linkText.indexOf(' ');
-    const valueToValidate = spaceIndex !== -1 ? linkText.substring(0, spaceIndex) : linkText;
+    const valueToValidate = srTokenOf(link.textContent);
 
     if (!SR_NUMBER_PATTERN.test(valueToValidate)) continue;
 

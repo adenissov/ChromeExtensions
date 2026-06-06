@@ -127,8 +127,9 @@ function advanceQueueIfProcessing() {
  * @param {string} elementId - data-mwlog-id of the target SR link
  * @param {string} srNumber - SR number (leading token of the cell)
  * @param {string} text - Display text to render
+ * @param {boolean} [isSearching=false] - True while a search is in flight (shows the spinner)
  */
-function paintCell(tabId, elementId, srNumber, text) {
+function paintCell(tabId, elementId, srNumber, text, isSearching = false) {
   if (!tabId || !elementId) {
     console.log('[Middleware Log] paintCell skipped - missing tab/element for SR', srNumber, '(tab:', tabId, 'el:', elementId, ')');
     return;
@@ -137,7 +138,8 @@ function paintCell(tabId, elementId, srNumber, text) {
     action: 'updateSRDisplay',
     elementId,
     srNumber,
-    responseBody: text
+    responseBody: text,
+    isSearching
   }).catch(error => {
     // Tab closed or content script orphaned (extension reloaded without a page refresh).
     console.log('[Middleware Log] paintCell failed for SR', srNumber, '-', error.message);
@@ -460,7 +462,7 @@ function processNextInQueue() {
   console.log('[Middleware Log] Processing', currentSearchIndex + 1, '/', searchQueue.length, '- SR:', item.srNumber);
 
   // Update SR to "Searching..."
-  paintCell(batchSourceTabId, item.elementId, item.srNumber, 'Searching in the Middleware log...');
+  paintCell(batchSourceTabId, item.elementId, item.srNumber, 'Searching in the Middleware log...', true);
 
   // Open Kibana (with tab ID tracking)
   const kibanaUrl = getKibanaUrl(item.srNumber);
@@ -539,7 +541,7 @@ async function runApiBatch(items, sfTabId) {
     currentSearchIndex = i;
     const item = searchQueue[i];
 
-    paintCell(batchSourceTabId, item.elementId, item.srNumber, 'Searching in the Middleware log...');
+    paintCell(batchSourceTabId, item.elementId, item.srNumber, 'Searching in the Middleware log...', true);
 
     let result;
     try {
@@ -585,7 +587,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       const kibanaUrl = getKibanaUrl(startedSrNumber);
 
       // Immediately update Salesforce to show "Searching..." message
-      paintCell(startedSourceTabId, startedElementId, startedSrNumber, 'Searching in the Middleware log...');
+      paintCell(startedSourceTabId, startedElementId, startedSrNumber, 'Searching in the Middleware log...', true);
 
       // Fast path: populate the cell from the API while the dashboard tab loads.
       if (useApi && startedSourceTabId && startedElementId) {
