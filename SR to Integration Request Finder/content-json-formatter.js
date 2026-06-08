@@ -120,6 +120,21 @@ const validationRules = [
 		message: 'Street suffix for MLS is longer than 10 characters'
 	},
 	{
+		// Scoped to location.address.unit only (per-path), so other "unit" fields are untouched.
+		type: 'custom',
+		validate: (obj) => {
+			var unit = obj.location && obj.location.address ? obj.location.address.unit : undefined;
+			if (typeof unit !== 'string' || unit === '') return [];
+			return [{
+				path: 'location.address.unit',
+				isValid: unit.length <= 5,
+				fieldName: 'unit',
+				value: unit
+			}];
+		},
+		message: 'Invalid length: more than 5 characters'
+	},
+	{
 		type: 'missing-sibling',
 		arrayField: 'intakeAnswers',
 		requiredField: 'questionPrompt',

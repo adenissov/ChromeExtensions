@@ -9,7 +9,8 @@ const SR_NUMBER_PATTERN = /^\d{8,9}$/;  // 8-9 digit numbers
 const ELEMENT_ID_ATTR = 'data-mwlog-id';
 
 // Mirrors the constant in background.js. Appended to a "No records" result when
-// the SR's Created Date Time is at least an hour old (see updateSRDisplay).
+// the SR's Created Date Time is at least an hour old, or to any result whose log
+// line contains an Oracle "numeric or value error" (see updateSRDisplay).
 const TIP_CHECK_INTEGRATION_REQUEST = ' ✅Tip:Check Integration Request for validation errors';
 const NO_RECORDS_MESSAGE = 'No records in the Middleware log';
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -131,6 +132,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (createdDate && (Date.now() - createdDate.getTime()) >= ONE_HOUR_MS) {
         responseBody += TIP_CHECK_INTEGRATION_REQUEST;
       }
+    } else if (/numeric or value error/i.test(responseBody)) {
+      // An Oracle "numeric or value error" (ORA-06502) in the log line points to
+      // bad/oversized data from the request, so the same validation tip applies.
+      responseBody += TIP_CHECK_INTEGRATION_REQUEST;
     }
 
     const isSearching = !!message.isSearching;
